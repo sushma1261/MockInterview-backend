@@ -1,0 +1,15 @@
+node_modules/
+package-lock.json
+
+.env
+.DS_Store
+
+build/
+dist/
+coverage/
+uploads/
+prisma/dev.db
+npm-debug.log*
+.vscode/
+.idea/
+*.log
