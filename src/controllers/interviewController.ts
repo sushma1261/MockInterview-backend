@@ -3,7 +3,6 @@ import { Request, Response } from "express";
 
 const model = "models/gemini-2.5-flash"; // or "models/gemini-1.5-pro-latest"
 const url = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent`;
-const disableAI = true;
 
 export const giveFeedback = async (
   req: Request,
@@ -12,7 +11,9 @@ export const giveFeedback = async (
   try {
     const { question, answer } = req.body;
 
-    if (disableAI) {
+    if (process.env.AI_DISABLED === "true") {
+      console.log("AI is disabled. Sending static feedback.");
+
       res.json({
         reply: {
           confidence: 7,
@@ -88,12 +89,30 @@ export const getQuestions = async (
 ): Promise<void> => {
   try {
     const questions = [
-      "Can you tell me about yourself?",
-      "What are your strengths and weaknesses?",
-      "Why do you want to work here?",
-      "Describe a challenging situation you faced and how you handled it.",
-      "Where do you see yourself in five years?",
-      "Why should we hire you?",
+      {
+        id: 1,
+        text: "Tell me about yourself",
+        level: "Easy",
+        type: "Behavioral",
+      },
+      {
+        id: 2,
+        text: "Why do you want this job?",
+        level: "Easy",
+        type: "Behavioral",
+      },
+      {
+        id: 3,
+        text: "What is your greatest strength?",
+        level: "Easy",
+        type: "Behavioral",
+      },
+      {
+        id: 4,
+        text: "Describe a challenging project.",
+        level: "Medium",
+        type: "Behavioral",
+      },
     ];
     res.json({ questions });
   } catch (error) {
