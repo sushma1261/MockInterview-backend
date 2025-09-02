@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Request, Response, Router } from "express";
+import { authenticate } from "../middleware/auth";
 const router = Router();
 
 // In-memory store for simplicity (you can use DB later)
@@ -11,7 +12,7 @@ interface Session {
 const sessions: Record<string, Session> = {};
 
 // Start new interview
-router.post("/start", async (req: Request, res: Response) => {
+router.post("/start", authenticate, async (req: Request, res: Response) => {
   const { question } = req.body;
   const sessionId = Date.now().toString();
 
@@ -20,7 +21,7 @@ router.post("/start", async (req: Request, res: Response) => {
 });
 
 // Submit answer and get follow-up
-router.post("/answer", async (req: Request, res: Response) => {
+router.post("/answer", authenticate, async (req: Request, res: Response) => {
   try {
     const { sessionId, answer } = req.body;
     const session = sessions[sessionId];
@@ -71,7 +72,7 @@ router.post("/answer", async (req: Request, res: Response) => {
 });
 
 // End interview and give combined feedback
-router.post("/end", async (req: Request, res: Response) => {
+router.post("/end", authenticate, async (req: Request, res: Response) => {
   try {
     const { sessionId } = req.body;
     const session = sessions[sessionId];
