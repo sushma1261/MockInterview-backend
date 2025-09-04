@@ -3,7 +3,9 @@ import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { CharacterTextSplitter } from "@langchain/textsplitters";
 import { Request, Response, Router } from "express";
+import fs from "fs/promises";
 import multer from "multer";
+import path from "path";
 import { Pool } from "pg";
 import { authenticate } from "../middleware/auth";
 
@@ -11,7 +13,7 @@ const router = Router();
 
 // Postgres pool
 const pool = new Pool({
-  host: "localhost", // adjust if needed (e.g., docker service name)
+  host: "localhost", // update if using Render PG host
   port: 5432,
   user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
@@ -24,9 +26,21 @@ const embeddings = new GoogleGenerativeAIEmbeddings({
   model: "text-embedding-004",
 });
 
+// Ensure uploads folder exists
+const uploadsDir = path.join(process.cwd(), "uploads");
+async function ensureUploadsDir() {
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+  } catch (err) {
+    console.error("Error ensuring uploads dir:", err);
+  }
+}
+ensureUploadsDir();
+
+// Multer storage config
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "uploads/");
+    cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -66,10 +80,13 @@ router.post(
           idColumnName: "id",
           vectorColumnName: "embedding",
           contentColumnName: "text",
-          metadataColumnName: undefined, // 👈 disables metadata
+          metadataColumnName: undefined,
         },
       });
       await vectorStore.addDocuments(docs);
+
+      // 3. Delete file after processing
+      await fs.unlink(req.file.path);
 
       res.json({
         message: "Resume uploaded & embedded with Gemini successfully",
