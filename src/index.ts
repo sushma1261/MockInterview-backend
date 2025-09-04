@@ -6,6 +6,8 @@ import multer from "multer";
 import path from "path";
 import interview from "./routes/interview";
 import interviewRoutes from "./routes/interviewRoutes";
+import resume from "./routes/resume";
+import search from "./routes/search";
 dotenv.config();
 
 const upload = multer({ dest: "uploads/" });
@@ -14,12 +16,17 @@ const app: Application = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
+app.use(express.urlencoded({ extended: true })); // keep for form submissions
+
+app.use("/resume", resume);
+
 app.use(bodyParser.json());
 app.use(express.json());
 
 // Routes
 app.use("/api", interviewRoutes);
 app.use("/interview", interview);
+app.use("/search", search);
 
 app.get("/", (req: Request, res: Response) => {
   res.send("Mock Interview Backend Running 🚀");

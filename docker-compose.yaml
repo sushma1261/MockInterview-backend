@@ -1,33 +1,17 @@
-version: "3.9"
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "8080:8080"
-    env_file:
-      - ./backend/.env
-    depends_on:
-      - postgres
-      - redis
-
   postgres:
-    image: postgres:15-alpine
+    build: .
+    image: ankane/pgvector:latest
     container_name: postgres
     restart: always
     environment:
-      POSTGRES_USER: interview
-      POSTGRES_PASSWORD: secret
+      POSTGRES_USER: system
+      POSTGRES_PASSWORD: password
       POSTGRES_DB: mockinterview
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
 
 volumes:
   postgres_data:
