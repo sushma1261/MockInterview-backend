@@ -19,11 +19,10 @@ const sessions: Record<string, any> = {};
 
 // Postgres pool
 const pool = new Pool({
-  host: process.env.DATABASE_URL,
-  port: 5432,
-  user: process.env.POSTGRES_USER,
-  password: process.env.POSTGRES_PASSWORD,
-  database: process.env.POSTGRES_DB,
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false, // Render requires SSL
+  },
 });
 
 // Embeddings model (Gemini)
