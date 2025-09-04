@@ -1,39 +1,23 @@
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { CharacterTextSplitter } from "@langchain/textsplitters";
 import { Request, Response, Router } from "express";
 import fs from "fs/promises";
 import multer from "multer";
-import path from "path";
-import { Pool } from "pg";
+import { uploadsDir } from "../constants";
+import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
+import {
+  ensureUploadsDir,
+  getTextEmbeddingsAPI,
+  initializeVectorStore,
+} from "../utils";
 
 const router = Router();
 
 // Postgres pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, // Render requires SSL
-  },
-});
+const pool = getDBPool();
 
-// Embeddings model (Gemini)
-const embeddings = new GoogleGenerativeAIEmbeddings({
-  apiKey: process.env.GEMINI_API_KEY!,
-  model: "text-embedding-004",
-});
-
-// Ensure uploads folder exists
-const uploadsDir = path.join(process.cwd(), "uploads");
-async function ensureUploadsDir() {
-  try {
-    await fs.mkdir(uploadsDir, { recursive: true });
-  } catch (err) {
-    console.error("Error ensuring uploads dir:", err);
-  }
-}
+// Ensure uploads folder exists in project root
 ensureUploadsDir();
 
 // Multer storage config
@@ -49,7 +33,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Upload resume and create embeddings
+// Upload resume and create embeddings and store in PGVectorStore
 router.post(
   "/upload/pdf",
   authenticate,
@@ -70,19 +54,16 @@ router.post(
         chunkOverlap: 100,
       });
       const docs = await splitter.splitDocuments(rawDocs);
+      console.log(`Split into chunks done. Total chunks: ${docs.length}`);
 
       // 2. Store directly into Postgres with PGVectorStore
-      const vectorStore = await PGVectorStore.initialize(embeddings, {
+      const vectorStore = await initializeVectorStore(
         pool,
-        tableName: "resume_chunks",
-        columns: {
-          idColumnName: "id",
-          vectorColumnName: "embedding",
-          contentColumnName: "text",
-          metadataColumnName: undefined,
-        },
-      });
+        getTextEmbeddingsAPI()
+      );
       await vectorStore.addDocuments(docs);
+
+      console.log("Documents embedded & stored in PGVectorStore");
 
       // 3. Delete file after processing
       await fs.unlink(req.file.path);
