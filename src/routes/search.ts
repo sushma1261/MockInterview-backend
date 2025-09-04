@@ -19,7 +19,7 @@ const sessions: Record<string, any> = {};
 
 // Postgres pool
 const pool = new Pool({
-  host: "localhost",
+  host: process.env.DATABASE_URL,
   port: 5432,
   user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
@@ -41,6 +41,7 @@ const llm = new ChatGoogleGenerativeAI({
 router.post("/", authenticate, async (req: Request, res: Response) => {
   try {
     // Initialize vector store
+    console.log("Pool config::", pool.options);
     const vectorStore = await PGVectorStore.initialize(embeddings, {
       pool,
       tableName: "resume_chunks",

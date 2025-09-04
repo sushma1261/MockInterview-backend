@@ -3,7 +3,7 @@ import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { Pool } from "pg";
 
 const pool = new Pool({
-  host: "localhost", // or docker service name if running in compose
+  host: process.env.DATABASE_URL, // or docker service name if running in compose
   port: 5432,
   user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,

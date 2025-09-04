@@ -13,7 +13,7 @@ const router = Router();
 
 // Postgres pool
 const pool = new Pool({
-  host: "localhost", // update if using Render PG host
+  host: process.env.DATABASE_URL, // update if using Render PG host
   port: 5432,
   user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
