@@ -3,8 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express, { Application, Request, Response } from "express";
 import multer from "multer";
+import health from "./routes/health";
+import newResume from "./routes/newResume";
+import newSearch from "./routes/newSearch";
 import resume from "./routes/resume";
-import searc from "./routes/search";
+import search from "./routes/search";
 dotenv.config();
 
 const upload = multer({ dest: "uploads/" });
@@ -17,6 +20,7 @@ app.use(express.urlencoded({ extended: true })); // keep for form submissions
 
 // File upload route
 app.use("/resume", resume);
+app.use("/new/resume", newResume);
 
 // Body parser middleware not for urlencoded forms
 app.use(bodyParser.json());
@@ -29,7 +33,9 @@ app.use(express.json());
 // app.use("/interview", interview);
 
 // Actual Routes
-app.use("/search", searc);
+app.use("/search", search);
+app.use("/new/search", newSearch);
+app.use("/health", health);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {

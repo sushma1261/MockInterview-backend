@@ -1,11 +1,12 @@
 import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
+import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import {
   ChatGoogleGenerativeAI,
   GoogleGenerativeAIEmbeddings,
 } from "@langchain/google-genai";
 import fs from "fs/promises";
 import { Pool } from "pg";
-import { uploadsDir } from "./constants";
+import { INTERVIEW_SYSTEM_PROMPT, uploadsDir } from "./constants";
 
 export async function ensureUploadsDir() {
   try {
@@ -25,6 +26,7 @@ export const getTextEmbeddingsAPI = () => {
 export const llm = new ChatGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY!,
   model: "gemini-2.5-flash",
+  temperature: 0.5,
 });
 
 export const vectorStoreTableName = "resume_chunks";
@@ -44,4 +46,30 @@ export const initializeVectorStore = async (
       metadataColumnName: "metadata",
     },
   });
+};
+
+export const getInterviewPrompt = () => {
+  return ChatPromptTemplate.fromMessages([
+    [
+      "system",
+      `${INTERVIEW_SYSTEM_PROMPT}\n\nResume context:\n{context}\n\nRelevant conversation:\n{conversation_history}`,
+    ],
+    ["human", "{conversation}"],
+  ]);
+};
+
+export const getFeedbackPrompt = () => {
+  return PromptTemplate.fromTemplate(`
+  You are a professional interview coach. 
+  Analyze the following interview transcript and give relevant feedback to user.
+  Resume context:
+  {context}
+  Transcript:
+  {conversation_history}
+  Provide structured feedback:
+  1. Confidence score (1-10)
+  2. Grammar assessment
+  3. Content quality
+  4. Three improvement suggestions
+  `);
 };

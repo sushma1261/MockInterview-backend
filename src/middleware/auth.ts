@@ -27,5 +27,6 @@ export const authenticate = async (
 
   // Attach user info to request
   (req as any).user = decoded;
+  console.log("Authenticated user:", decoded);
   next();
 };
