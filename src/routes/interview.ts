@@ -32,13 +32,6 @@ router.post("/answer", authenticate, async (req: Request, res: Response) => {
     // Save answer
     session.answers.push({ q: session.question, a: answer });
 
-    // Store session in DB using Prisma
-    // const interview = await prisma.interview.create({
-    //   data: {
-    //     sessionId: session.id,
-    //   },
-    // });
-
     if (process.env.AI_DISABLED === "true") {
       console.log("AI is disabled. Sending static follow-up.");
       res.json({

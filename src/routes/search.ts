@@ -1,13 +1,9 @@
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { PromptTemplate } from "@langchain/core/prompts";
-import {
-  ChatGoogleGenerativeAI,
-  GoogleGenerativeAIEmbeddings,
-} from "@langchain/google-genai";
 import { Request, Response, Router } from "express";
-import { Pool } from "pg";
+import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
+import { getTextEmbeddingsAPI, initializeVectorStore, llm } from "../utils";
 
 const router = Router();
 // interface Session {
@@ -18,41 +14,19 @@ const router = Router();
 const sessions: Record<string, any> = {};
 
 // Postgres pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, // Render requires SSL
-  },
-});
-
-// Embeddings model (Gemini)
-const embeddings = new GoogleGenerativeAIEmbeddings({
-  apiKey: process.env.GEMINI_API_KEY!,
-  model: "text-embedding-004",
-});
-
-const llm = new ChatGoogleGenerativeAI({
-  apiKey: process.env.GEMINI_API_KEY!,
-  model: "gemini-2.5-flash",
-});
+const pool = getDBPool();
 
 // Search resume chunks
 router.post("/", authenticate, async (req: Request, res: Response) => {
   try {
     // Initialize vector store
-    console.log("Pool config::", pool.options);
-    const vectorStore = await PGVectorStore.initialize(embeddings, {
+    const vectorStore = await initializeVectorStore(
       pool,
-      tableName: "resume_chunks",
-      columns: {
-        idColumnName: "id",
-        vectorColumnName: "embedding",
-        contentColumnName: "text",
-        metadataColumnName: undefined,
-      },
-    });
+      getTextEmbeddingsAPI()
+    );
     const question =
       "Help me prepare for behavioral interview questions based on my resume.";
+
     // Perform similarity search
     const retrievedDocs = await vectorStore.similaritySearch(question, 3); // top 3 matches
 
@@ -64,7 +38,7 @@ router.post("/", authenticate, async (req: Request, res: Response) => {
       The candidate asked: "{question}"
       Here are the most relevant parts of their resume:
       {context}
-      Based on the resume, ask the candidate 2-3 insightful questions that can help them prepare for job interviews.
+      Based on the resume, ask the candidate 1 insightful question that can help them prepare for job interviews.
       If the resume does not provide relevant information, ask general questions about their skills and experience.
     `);
 
@@ -97,32 +71,34 @@ router.post("/start", authenticate, async (req: Request, res: Response) => {
 
     try {
       // Use vector store to pull resume context
-      const vectorStore = await PGVectorStore.initialize(embeddings, {
+      const vectorStore = await initializeVectorStore(
         pool,
-        tableName: "resume_chunks",
-        columns: {
-          idColumnName: "id",
-          vectorColumnName: "embedding",
-          contentColumnName: "text",
-          metadataColumnName: undefined,
-        },
-      });
+        getTextEmbeddingsAPI()
+      );
 
       const query =
-        "Help me prepare for behavioral interview questions based on my resume.";
+        "Help the candidate prepare for behavioral interview based on the resume uploaded.";
       const docs = await vectorStore.similaritySearch(query, 3);
       retrievedDocs = docs.map((d) => d.pageContent);
       console.log("Retrieved resume docs:");
       const context = retrievedDocs.join("\n\n");
+      console.log(context);
 
-      const prompt = `
-        You are an interviewer preparing a candidate based on their resume.
-        Resume snippets:\n${context}\n
-        Ask the candidate their FIRST interview question (behavioral or technical).
-        Only return the question.`;
+      const prompt = PromptTemplate.fromTemplate(`
+        You are an AI assistant helping a candidate prepare for behavioral questions based on their resume.
+        Here are the most relevant parts of their resume:
+        {context}
+        Based on the resume, ask the candidate their FIRST interview question (behavioral or technical). 
+        Only return the question.
+        If the resume does not provide relevant information, ask general questions about their skills and experience.
+      `);
+      const chain = prompt.pipe(llm).pipe(new StringOutputParser());
 
-      const result = await llm.invoke(prompt);
-      firstQuestion = result.content.toString().trim();
+      const answer = await chain.invoke({
+        context,
+      });
+
+      firstQuestion = answer.trim();
       console.log("First question:", firstQuestion);
     } catch (e) {
       // Generic fallback question
@@ -157,6 +133,7 @@ router.post("/answer", authenticate, async (req: Request, res: Response) => {
     // Build prompt with context
     const context = session.retrievedDocs?.join("\n\n") || "";
     console.log("Using context:\n", context);
+
     const prompt = `
       You are an interviewer. Use the candidate's resume context if available:\n${context}\n
       Previous Question: ${session.question}

@@ -33,19 +33,18 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Upload resume and create embeddings and store in PGVectorStore
 router.post(
   "/upload/pdf",
   authenticate,
   upload.single("resume"),
   async (req: Request, res: Response) => {
-    console.log("File received:", req.file);
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const userId = req.user?.uid;
+    if (!userId) return res.status(401).json({ error: "No user ID" });
+    console.log("File received from user:", userId, req.file);
 
     try {
-      // 1. Load & split resume
       const loader = new PDFLoader(req.file.path);
       const rawDocs = await loader.load();
 
@@ -54,22 +53,25 @@ router.post(
         chunkOverlap: 100,
       });
       const docs = await splitter.splitDocuments(rawDocs);
-      console.log(`Split into chunks done. Total chunks: ${docs.length}`);
+      // Attach metadata to docs before embedding
+      const docsWithUserId = docs.map((doc) => ({
+        ...doc,
+        metadata: {
+          ...doc.metadata,
+          user_id: userId,
+        },
+      }));
 
-      // 2. Store directly into Postgres with PGVectorStore
       const vectorStore = await initializeVectorStore(
         pool,
         getTextEmbeddingsAPI()
       );
-      await vectorStore.addDocuments(docs);
+      await vectorStore.addDocuments(docsWithUserId);
 
-      console.log("Documents embedded & stored in PGVectorStore");
-
-      // 3. Delete file after processing
       await fs.unlink(req.file.path);
 
       res.json({
-        message: "Resume uploaded & embedded with Gemini successfully",
+        message: "Resume uploaded & embedded successfully",
         chunks: docs.length,
       });
     } catch (err) {
