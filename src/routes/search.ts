@@ -1,202 +1,202 @@
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { PromptTemplate } from "@langchain/core/prompts";
-import { Request, Response, Router } from "express";
-import { getDBPool } from "../db/pool";
-import { authenticate } from "../middleware/auth";
-import { getTextEmbeddingsAPI, initializeVectorStore, llm } from "../utils";
+// import { StringOutputParser } from "@langchain/core/output_parsers";
+// import { PromptTemplate } from "@langchain/core/prompts";
+// import { Request, Response, Router } from "express";
+// import { getDBPool } from "../db/pool";
+// import { authenticate } from "../middleware/auth";
+// import { getTextEmbeddingsAPI, initializeVectorStore, llm } from "../utils";
 
-const router = Router();
-// interface Session {
-//   id: string;
-//   question: string;
-//   answers: { q: string; a: string }[];
-// }
-const sessions: Record<string, any> = {};
+// const router = Router();
+// // interface Session {
+// //   id: string;
+// //   question: string;
+// //   answers: { q: string; a: string }[];
+// // }
+// const sessions: Record<string, any> = {};
 
-// Postgres pool
-const pool = getDBPool();
+// // Postgres pool
+// const pool = getDBPool();
 
-// Search resume chunks
-router.post("/", authenticate, async (req: Request, res: Response) => {
-  try {
-    // Initialize vector store
-    const vectorStore = await initializeVectorStore(
-      pool,
-      getTextEmbeddingsAPI()
-    );
-    const question =
-      "Help me prepare for behavioral interview questions based on my resume.";
+// // Search resume chunks
+// router.post("/", authenticate, async (req: Request, res: Response) => {
+//   try {
+//     // Initialize vector store
+//     const vectorStore = await initializeVectorStore(
+//       pool,
+//       getTextEmbeddingsAPI()
+//     );
+//     const question =
+//       "Help me prepare for behavioral interview questions based on my resume.";
 
-    // Perform similarity search
-    const retrievedDocs = await vectorStore.similaritySearch(question, 3); // top 3 matches
+//     // Perform similarity search
+//     const retrievedDocs = await vectorStore.similaritySearch(question, 3); // top 3 matches
 
-    const context = retrievedDocs.map((doc) => doc.pageContent).join("\n\n");
+//     const context = retrievedDocs.map((doc) => doc.pageContent).join("\n\n");
 
-    // Prompt Template
-    const prompt = PromptTemplate.fromTemplate(`
-      You are an AI assistant helping a candidate analyze their resume.
-      The candidate asked: "{question}"
-      Here are the most relevant parts of their resume:
-      {context}
-      Based on the resume, ask the candidate 1 insightful question that can help them prepare for job interviews.
-      If the resume does not provide relevant information, ask general questions about their skills and experience.
-    `);
+//     // Prompt Template
+//     const prompt = PromptTemplate.fromTemplate(`
+//       You are an AI assistant helping a candidate analyze their resume.
+//       The candidate asked: "{question}"
+//       Here are the most relevant parts of their resume:
+//       {context}
+//       Based on the resume, ask the candidate 1 insightful question that can help them prepare for job interviews.
+//       If the resume does not provide relevant information, ask general questions about their skills and experience.
+//     `);
 
-    const chain = prompt.pipe(llm).pipe(new StringOutputParser());
+//     const chain = prompt.pipe(llm).pipe(new StringOutputParser());
 
-    // Run chain
-    const answer = await chain.invoke({
-      question,
-      context,
-    });
+//     // Run chain
+//     const answer = await chain.invoke({
+//       question,
+//       context,
+//     });
 
-    res.json({
-      question,
-      answer,
-      retrieved: retrievedDocs.map((d) => d.pageContent),
-    });
-  } catch (err) {
-    console.error("Error during search:", err);
-    res.status(500).json({ error: "Failed to search resume" });
-  }
-});
+//     res.json({
+//       question,
+//       answer,
+//       retrieved: retrievedDocs.map((d) => d.pageContent),
+//     });
+//   } catch (err) {
+//     console.error("Error during search:", err);
+//     res.status(500).json({ error: "Failed to search resume" });
+//   }
+// });
 
-// 🟢 Start a new chat session
-router.post("/start", authenticate, async (req: Request, res: Response) => {
-  try {
-    const sessionId = Date.now().toString();
+// // 🟢 Start a new chat session
+// router.post("/start", authenticate, async (req: Request, res: Response) => {
+//   try {
+//     const sessionId = Date.now().toString();
 
-    let firstQuestion: string;
-    let retrievedDocs: string[] = [];
+//     let firstQuestion: string;
+//     let retrievedDocs: string[] = [];
 
-    try {
-      // Use vector store to pull resume context
-      const vectorStore = await initializeVectorStore(
-        pool,
-        getTextEmbeddingsAPI()
-      );
+//     try {
+//       // Use vector store to pull resume context
+//       const vectorStore = await initializeVectorStore(
+//         pool,
+//         getTextEmbeddingsAPI()
+//       );
 
-      const query =
-        "Help the candidate prepare for behavioral interview based on the resume uploaded.";
-      const docs = await vectorStore.similaritySearch(query, 3);
-      retrievedDocs = docs.map((d) => d.pageContent);
-      console.log("Retrieved resume docs:");
-      const context = retrievedDocs.join("\n\n");
-      console.log(context);
+//       const query =
+//         "Help the candidate prepare for behavioral interview based on the resume uploaded.";
+//       const docs = await vectorStore.similaritySearch(query, 3);
+//       retrievedDocs = docs.map((d) => d.pageContent);
+//       console.log("Retrieved resume docs:");
+//       const context = retrievedDocs.join("\n\n");
+//       console.log(context);
 
-      const prompt = PromptTemplate.fromTemplate(`
-        You are an AI assistant helping a candidate prepare for behavioral questions based on their resume.
-        Here are the most relevant parts of their resume:
-        {context}
-        Based on the resume, ask the candidate their FIRST interview question (behavioral or technical). 
-        Only return the question.
-        If the resume does not provide relevant information, ask general questions about their skills and experience.
-      `);
-      const chain = prompt.pipe(llm).pipe(new StringOutputParser());
+//       const prompt = PromptTemplate.fromTemplate(`
+//         You are an AI assistant helping a candidate prepare for behavioral questions based on their resume.
+//         Here are the most relevant parts of their resume:
+//         {context}
+//         Based on the resume, ask the candidate their FIRST interview question (behavioral or technical).
+//         Only return the question.
+//         If the resume does not provide relevant information, ask general questions about their skills and experience.
+//       `);
+//       const chain = prompt.pipe(llm).pipe(new StringOutputParser());
 
-      const answer = await chain.invoke({
-        context,
-      });
+//       const answer = await chain.invoke({
+//         context,
+//       });
 
-      firstQuestion = answer.trim();
-      console.log("First question:", firstQuestion);
-    } catch (e) {
-      // Generic fallback question
-      console.log("No resume context, using generic question.");
-      firstQuestion = "Tell me about yourself.";
-    }
+//       firstQuestion = answer.trim();
+//       console.log("First question:", firstQuestion);
+//     } catch (e) {
+//       // Generic fallback question
+//       console.log("No resume context, using generic question.");
+//       firstQuestion = "Tell me about yourself.";
+//     }
 
-    sessions[sessionId] = {
-      id: sessionId,
-      history: [],
-      question: firstQuestion,
-      retrievedDocs,
-    };
+//     sessions[sessionId] = {
+//       id: sessionId,
+//       history: [],
+//       question: firstQuestion,
+//       retrievedDocs,
+//     };
 
-    res.json({ sessionId, question: firstQuestion, retrievedDocs });
-  } catch (err) {
-    console.error("Error in /start:", err);
-    res.status(500).json({ error: "Failed to start session" });
-  }
-});
+//     res.json({ sessionId, question: firstQuestion, retrievedDocs });
+//   } catch (err) {
+//     console.error("Error in /start:", err);
+//     res.status(500).json({ error: "Failed to start session" });
+//   }
+// });
 
-// 🟢 Answer and get follow-up
-router.post("/answer", authenticate, async (req: Request, res: Response) => {
-  try {
-    const { sessionId, answer } = req.body;
-    const session = sessions[sessionId];
-    if (!session) return res.status(404).json({ error: "Session not found" });
+// // 🟢 Answer and get follow-up
+// router.post("/answer", authenticate, async (req: Request, res: Response) => {
+//   try {
+//     const { sessionId, answer } = req.body;
+//     const session = sessions[sessionId];
+//     if (!session) return res.status(404).json({ error: "Session not found" });
 
-    // Save Q/A into history
-    session.history.push({ q: session.question, a: answer });
+//     // Save Q/A into history
+//     session.history.push({ q: session.question, a: answer });
 
-    // Build prompt with context
-    const context = session.retrievedDocs?.join("\n\n") || "";
-    console.log("Using context:\n", context);
+//     // Build prompt with context
+//     const context = session.retrievedDocs?.join("\n\n") || "";
+//     console.log("Using context:\n", context);
 
-    const prompt = `
-      You are an interviewer. Use the candidate's resume context if available:\n${context}\n
-      Previous Question: ${session.question}
-      Candidate Answer: ${answer}
-      Ask ONE insightful follow-up question. Do not provide feedback yet.`;
+//     const prompt = `
+//       You are an interviewer. Use the candidate's resume context if available:\n${context}\n
+//       Previous Question: ${session.question}
+//       Candidate Answer: ${answer}
+//       Ask ONE insightful follow-up question. Do not provide feedback yet.`;
 
-    const result = await llm.invoke(prompt);
-    const followUp = result.content.toString().trim();
+//     const result = await llm.invoke(prompt);
+//     const followUp = result.content.toString().trim();
 
-    // Update session
-    session.question = followUp;
-    console.log("Follow-up question:", followUp);
+//     // Update session
+//     session.question = followUp;
+//     console.log("Follow-up question:", followUp);
 
-    res.json({ followUp });
-  } catch (err) {
-    console.error("Error in /answer:", err);
-    res.status(500).json({ error: "Failed to get follow-up" });
-  }
-});
+//     res.json({ followUp });
+//   } catch (err) {
+//     console.error("Error in /answer:", err);
+//     res.status(500).json({ error: "Failed to get follow-up" });
+//   }
+// });
 
-// 🟢 End interview → feedback
-router.post("/end", authenticate, async (req: Request, res: Response) => {
-  try {
-    const { sessionId } = req.body;
-    const session = sessions[sessionId];
-    if (!session) return res.status(404).json({ error: "Session not found" });
+// // 🟢 End interview → feedback
+// router.post("/end", authenticate, async (req: Request, res: Response) => {
+//   try {
+//     const { sessionId } = req.body;
+//     const session = sessions[sessionId];
+//     if (!session) return res.status(404).json({ error: "Session not found" });
 
-    const transcript = session.history
-      .map((x: any, i: number) => `Q${i + 1}: ${x.q}\nA${i + 1}: ${x.a}`)
-      .join("\n\n");
+//     const transcript = session.history
+//       .map((x: any, i: number) => `Q${i + 1}: ${x.q}\nA${i + 1}: ${x.a}`)
+//       .join("\n\n");
 
-    const prompt = `
-      You are a professional interview coach. Analyze the following interview transcript and provide:
-      1. Confidence score (1-10)
-      2. Grammar assessment
-      3. Content quality
-      4. 3 improvement suggestions
-      ---
-      Transcript:
-      ${transcript}
-    `;
+//     const prompt = `
+//       You are a professional interview coach. Analyze the following interview transcript and provide:
+//       1. Confidence score (1-10)
+//       2. Grammar assessment
+//       3. Content quality
+//       4. 3 improvement suggestions
+//       ---
+//       Transcript:
+//       ${transcript}
+//     `;
 
-    const result = await llm.invoke(prompt);
-    const feedback = result.content.toString().trim();
+//     const result = await llm.invoke(prompt);
+//     const feedback = result.content.toString().trim();
 
-    res.json({ feedback });
-  } catch (err) {
-    console.error("Error in /end:", err);
-    res.status(500).json({ error: "Failed to end session" });
-  }
-});
+//     res.json({ feedback });
+//   } catch (err) {
+//     console.error("Error in /end:", err);
+//     res.status(500).json({ error: "Failed to end session" });
+//   }
+// });
 
-// 🟢 Info endpoint (for UI sidebar/debugging)
-router.get("/info/:sessionId", authenticate, (req: Request, res: Response) => {
-  const session = sessions[req.params.sessionId];
-  if (!session) return res.status(404).json({ error: "Session not found" });
+// // 🟢 Info endpoint (for UI sidebar/debugging)
+// router.get("/info/:sessionId", authenticate, (req: Request, res: Response) => {
+//   const session = sessions[req.params.sessionId];
+//   if (!session) return res.status(404).json({ error: "Session not found" });
 
-  res.json({
-    id: session.id,
-    currentQuestion: session.question,
-    history: session.history,
-    retrievedDocs: session.retrievedDocs,
-  });
-});
+//   res.json({
+//     id: session.id,
+//     currentQuestion: session.question,
+//     history: session.history,
+//     retrievedDocs: session.retrievedDocs,
+//   });
+// });
 
-export default router;
+// export default router;
