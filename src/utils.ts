@@ -1,9 +1,7 @@
+import { GoogleGenerativeAI, Schema, Tool } from "@google/generative-ai";
 import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
-import {
-  ChatGoogleGenerativeAI,
-  GoogleGenerativeAIEmbeddings,
-} from "@langchain/google-genai";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import fs from "fs/promises";
 import { Pool } from "pg";
 import { INTERVIEW_SYSTEM_PROMPT, uploadsDir } from "./constants";
@@ -23,12 +21,37 @@ export const getTextEmbeddingsAPI = () => {
     model: "text-embedding-004",
   });
 };
-export const llm = new ChatGoogleGenerativeAI({
-  apiKey: process.env.GEMINI_API_KEY!,
-  model: "gemini-2.5-flash",
-  temperature: 0.5,
-});
 
+// Raw Gemini client (for structured JSON output)
+export const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+
+export interface LlmParams {
+  prompt: string;
+  schema: Schema;
+  tools: Tool[];
+}
+
+export const llm = async (params: { prompt: string; schema: Schema }) => {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: {
+      temperature: 0.5,
+      responseMimeType: "application/json", // ✅ only here
+      responseSchema: params.schema,
+    },
+  });
+
+  const response = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: params.prompt }] }],
+  });
+
+  const text = response.response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+};
 export const vectorStoreTableName = "resume_chunks";
 
 export const initializeVectorStore = async (
@@ -36,7 +59,6 @@ export const initializeVectorStore = async (
   textEmbeddingsAPI: GoogleGenerativeAIEmbeddings
 ) => {
   return PGVectorStore.initialize(textEmbeddingsAPI, {
-    // chore: Common config so not updating we should update it later
     pool,
     tableName: vectorStoreTableName,
     columns: {
@@ -66,10 +88,5 @@ export const getFeedbackPrompt = () => {
   {context}
   Transcript:
   {conversation_history}
-  Provide structured feedback:
-  1. Confidence score (1-10)
-  2. Grammar assessment
-  3. Content quality
-  4. Three improvement suggestions
   `);
 };

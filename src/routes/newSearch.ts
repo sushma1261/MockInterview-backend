@@ -1,17 +1,17 @@
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { RunnableSequence } from "@langchain/core/runnables";
+import { SchemaType } from "@google/generative-ai";
 import { Request, Response, Router } from "express";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
+import { handlers, tools } from "../tools";
 import {
+  genAI,
   getFeedbackPrompt,
   getInterviewPrompt,
   getTextEmbeddingsAPI,
   initializeVectorStore,
   llm,
 } from "../utils";
-
 const router = Router();
 
 // ---------------- In-Memory Conversation Vector Stores ----------------
@@ -35,7 +35,7 @@ async function storeConversationTurn(
 ) {
   const store = getConversationStore(userId);
   await store.addDocuments([
-    { pageContent: `Human: ${input}`, metadata: { role: "human" } },
+    { pageContent: `Human: ${input}`, metadata: { role: "user" } },
     { pageContent: `AI: ${output}`, metadata: { role: "ai" } },
   ]);
   console.log("Stored conversation turn for user:", userId);
@@ -43,23 +43,13 @@ async function storeConversationTurn(
 
 async function fetchConversationContext(userId: string, query: string) {
   const store = getConversationStore(userId);
-  const docs = await store.similaritySearch(query, 5);
+  const docs = await store.similaritySearch("all", 5);
   console.log("Fetched conversation context docs:", docs.length);
   return docs.map((d) => d.pageContent).join("\n");
 }
 
-// ---------------- Prompts & Chains ----------------
-
 const interviewPrompt = getInterviewPrompt();
-
-const interviewerChain = RunnableSequence.from([
-  interviewPrompt,
-  llm,
-  new StringOutputParser(),
-]);
-
 const feedbackPrompt = getFeedbackPrompt();
-const feedbackChain = feedbackPrompt.pipe(llm).pipe(new StringOutputParser());
 
 // ---------------- Resume Context ----------------
 async function fetchResumeContext(userId: string) {
@@ -91,6 +81,95 @@ async function fetchResumeContext(userId: string) {
   return userContexts.get(userId)!;
 }
 
+const generateFeedback = async (userId: string) => {
+  const retrievedDocs = await fetchResumeContext(userId);
+  const context = retrievedDocs.join("\n\n");
+
+  const conversation_history = await fetchConversationContext(
+    userId,
+    "end interview"
+  );
+
+  const feedback = await llm({
+    prompt: await feedbackPrompt.format({
+      context,
+      conversation_history,
+    }),
+    schema: {
+      type: SchemaType.OBJECT,
+      properties: {
+        confidence_score: { type: SchemaType.NUMBER },
+        grammar_assessment: { type: SchemaType.STRING },
+        content_quality: { type: SchemaType.STRING },
+        improvement_suggestions: {
+          type: SchemaType.ARRAY,
+          items: { type: SchemaType.STRING },
+        },
+      },
+      required: [
+        "confidence_score",
+        "grammar_assessment",
+        "content_quality",
+        "improvement_suggestions",
+      ],
+    },
+  });
+
+  await storeConversationTurn(
+    userId,
+    "End interview & request feedback",
+    JSON.stringify(feedback)
+  );
+
+  return feedback;
+};
+
+async function llmWithTools({
+  prompt,
+  schema,
+}: {
+  prompt: string;
+  schema?: any;
+}) {
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    tools,
+  });
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: schema
+      ? {
+          responseSchema: schema,
+        }
+      : {},
+  });
+
+  const response = result.response;
+  console.log("LLM response:", JSON.stringify(response));
+  const candidates = response?.candidates ?? [];
+  console.log("LLM candidates:", candidates.length);
+
+  const fnCall = candidates[0]?.content?.parts?.[0]?.functionCall;
+  if (fnCall) {
+    console.log("fnCall exists:", fnCall);
+    const fnName = fnCall.name as keyof typeof handlers;
+    const fnArgs = fnCall.args;
+
+    if (handlers[fnName]) {
+      console.log("Invoking tool:", fnName, "with args:", fnArgs);
+      return await (handlers[fnName] as any)(fnArgs as any);
+    }
+  } else {
+    console.log("No fnCall in response.");
+  }
+  console.log(
+    "Returning raw text response.",
+    candidates[0]?.content?.parts?.[0]?.text
+  );
+  return candidates[0]?.content?.parts?.[0]?.text ?? "";
+}
+
 // ---------------- Routes ----------------
 
 // Start Interview
@@ -107,16 +186,29 @@ router.post("/start", authenticate, async (req: Request, res: Response) => {
       "start interview"
     );
 
-    const firstQuestion = await interviewerChain.invoke({
-      context,
-      conversation_history,
-      conversation:
-        "Ask the FIRST interview question (behavioral or technical). Only the question.",
+    const firstQuestion = await llm({
+      prompt: await interviewPrompt.format({
+        context,
+        conversation_history,
+        conversation:
+          "Ask the FIRST interview question (behavioral or technical). Only the question.",
+      }),
+      schema: {
+        type: SchemaType.OBJECT,
+        properties: {
+          question: { type: SchemaType.STRING },
+        },
+        required: ["question"],
+      },
     });
 
-    await storeConversationTurn(userId, "Begin interview", firstQuestion);
+    await storeConversationTurn(
+      userId,
+      "Begin interview",
+      JSON.stringify(firstQuestion)
+    );
 
-    res.json({ question: firstQuestion, retrievedDocs });
+    res.json({ question: firstQuestion });
   } catch (err) {
     console.error("Error in /start:", err);
     res.status(500).json({ error: "Failed to start interview" });
@@ -126,33 +218,36 @@ router.post("/start", authenticate, async (req: Request, res: Response) => {
 // Answer
 router.post("/answer", authenticate, async (req: Request, res: Response) => {
   try {
+    const { answer } = req.body;
     const userId = req.user?.uid;
-    const { answer } = req.body as { answer: string };
+    console.log("Received answer from user:", userId, answer);
     if (!userId) return res.status(401).json({ error: "No user ID" });
-    if (!answer) return res.status(400).json({ error: "Missing 'answer'" });
 
+    // Get contexts
     const retrievedDocs = await fetchResumeContext(userId);
     const context = retrievedDocs.join("\n\n");
-
     const conversation_history = await fetchConversationContext(userId, answer);
 
-    const followUp = await interviewerChain.invoke({
-      context,
-      conversation_history,
-      conversation: `Candidate Answer: ${answer}\n\nAsk next question based on the answer and resume. 
-      Ask 1 question at a time.
-      Stop after asking 3 questions. 
-      And ask user to ask for feedback after 3 questions
-      Diversify your questions based on resume and answers given so far.
-      `,
+    console.log("Processing answer for user:", userId);
+    console.log("Calling llmWithTools: history", conversation_history);
+    const result = await llmWithTools({
+      prompt: await interviewPrompt.format({
+        context,
+        conversation_history,
+        conversation: `Candidate Answer: ${answer}
+        Ask next question OR generate feedback depending on context.
+        `,
+      }),
+      // schema: { type: SchemaType.OBJECT, properties: {}, required: [] }
     });
 
-    await storeConversationTurn(userId, answer, followUp);
+    console.log("llmWithTools result:", result);
 
-    res.json({ followUp });
+    await storeConversationTurn(userId, answer, JSON.stringify(result));
+    res.json(result);
   } catch (err) {
     console.error("Error in /answer:", err);
-    res.status(500).json({ error: "Failed to get follow-up" });
+    res.status(500).json({ error: "Failed to process answer" });
   }
 });
 
@@ -161,26 +256,7 @@ router.post("/end", authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.uid;
     if (!userId) return res.status(401).json({ error: "No user ID" });
-
-    const retrievedDocs = await fetchResumeContext(userId);
-    const context = retrievedDocs.join("\n\n");
-
-    const conversation_history = await fetchConversationContext(
-      userId,
-      "end interview"
-    );
-
-    const feedback = await feedbackChain.invoke({
-      context,
-      conversation_history,
-    });
-
-    await storeConversationTurn(
-      userId,
-      "End interview & request feedback",
-      feedback
-    );
-
+    const feedback = await generateFeedback(userId);
     res.json({ feedback });
   } catch (err) {
     console.error("Error in /end:", err);
