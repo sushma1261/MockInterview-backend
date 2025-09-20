@@ -7,7 +7,6 @@ import health from "./routes/health";
 import newResume from "./routes/newResume";
 import newSearch from "./routes/newSearch";
 import resume from "./routes/resume";
-import search from "./routes/search";
 dotenv.config();
 
 const upload = multer({ dest: "uploads/" });
@@ -33,7 +32,7 @@ app.use(express.json());
 // app.use("/interview", interview);
 
 // Actual Routes
-app.use("/search", search);
+// app.use("/search", search);
 app.use("/new/search", newSearch);
 app.use("/health", health);
 
