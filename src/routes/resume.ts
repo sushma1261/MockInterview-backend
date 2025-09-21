@@ -10,7 +10,7 @@ import {
   ensureUploadsDir,
   getTextEmbeddingsAPI,
   initializeVectorStore,
-} from "../utils";
+} from "../utils/utils";
 
 const router = Router();
 

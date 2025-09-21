@@ -4,7 +4,7 @@ import { ChatPromptTemplate, PromptTemplate } from "@langchain/core/prompts";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import fs from "fs/promises";
 import { Pool } from "pg";
-import { INTERVIEW_SYSTEM_PROMPT, uploadsDir } from "./constants";
+import { INTERVIEW_SYSTEM_PROMPT, uploadsDir } from "../constants";
 
 export async function ensureUploadsDir() {
   try {

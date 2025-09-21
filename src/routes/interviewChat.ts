@@ -8,7 +8,11 @@ import { Request, Response, Router } from "express";
 import { BufferMemory } from "langchain/memory";
 import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
-import { getTextEmbeddingsAPI, initializeVectorStore, llm } from "../utils";
+import {
+  getTextEmbeddingsAPI,
+  initializeVectorStore,
+  llm,
+} from "../utils/utils";
 
 const router = Router();
 const pool = getDBPool();

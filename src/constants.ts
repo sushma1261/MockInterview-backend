@@ -15,3 +15,6 @@ Guidelines:
 - Always call exactly one tool per step (ask_next_question or generate_feedback).
 - Never return plain text outside of a tool call.
 - If the user says 'end interview' or requests feedback, you must ALWAYS call the generate_feedback tool. Do not ask more questions.`;
+
+export const AI_MODEL = "gemini-2.5-flash";
+export const AI_VOICE_MODEL = "gemini-2.5-flash-preview-tts";
