@@ -1,4 +1,4 @@
-import { GenerateContentConfig, GoogleGenAI } from "@google/genai";
+import { Content, GenerateContentConfig, GoogleGenAI } from "@google/genai";
 import wav from "wav";
 import { AI_MODEL, AI_VOICE_MODEL } from "../constants";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -7,7 +7,7 @@ export const getAIResponse = async ({
   contents,
   config,
 }: {
-  contents: string;
+  contents: Content[] | string;
   config: GenerateContentConfig;
 }) => {
   return ai.models.generateContent({

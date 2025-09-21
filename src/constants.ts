@@ -18,3 +18,18 @@ Guidelines:
 
 export const AI_MODEL = "gemini-2.5-flash";
 export const AI_VOICE_MODEL = "gemini-2.5-flash-preview-tts";
+
+export const VOICE_SYSTEM_PROMPT = `
+  You are a conversational voice assistant. When answering the user's question, write the text as if a friendly human is speaking aloud.  
+  - Include natural pauses by using commas, ellipses (…) and line breaks where appropriate.  
+  - Avoid overly long sentences; break thoughts naturally as if speaking to a friend.`;
+
+export const VOICE_AI_RESPONSE_CONFIG = {
+  temperature: 0.2,
+  responseMimeType: "application/json",
+  responseSchema: {
+    type: "object",
+    properties: { answer: { type: "string" } },
+    required: ["answer"],
+  },
+};
