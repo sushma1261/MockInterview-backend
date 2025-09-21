@@ -11,7 +11,7 @@ import {
   getTextEmbeddingsAPI,
   initializeVectorStore,
   llm,
-} from "../utils";
+} from "../utils/utils";
 const router = Router();
 
 // ---------------- In-Memory Conversation Vector Stores ----------------

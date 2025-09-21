@@ -7,6 +7,8 @@ import health from "./routes/health";
 import newResume from "./routes/newResume";
 import newSearch from "./routes/newSearch";
 import resume from "./routes/resume";
+import voiceRoutes from "./routes/voiceRoutes";
+
 dotenv.config();
 
 const upload = multer({ dest: "uploads/" });
@@ -35,6 +37,8 @@ app.use(express.json());
 // app.use("/search", search);
 app.use("/new/search", newSearch);
 app.use("/health", health);
+
+app.use("/voice", voiceRoutes);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {
