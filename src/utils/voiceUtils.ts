@@ -1,7 +1,15 @@
 import { Content, GenerateContentConfig, GoogleGenAI } from "@google/genai";
+import { OpenAI } from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
+import { ResponseInput } from "openai/resources/responses/responses";
 import wav from "wav";
+import z from "zod";
 import { AI_MODEL, AI_VOICE_MODEL } from "../constants";
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+const clientOpenAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+// const clientOpenAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export const getAIResponse = async ({
   contents,
@@ -14,6 +22,26 @@ export const getAIResponse = async ({
     model: AI_MODEL,
     contents,
     config,
+  });
+};
+
+const RESPONSE_FORMAT = z.object({
+  answer: z.string(),
+});
+
+export const getResponseFromOpenAI = async ({
+  contents,
+}: // config,
+{
+  contents: string | ResponseInput;
+  // config: GenerateContentConfig;
+}) => {
+  return await clientOpenAI.responses.create({
+    model: "gpt-4o",
+    input: contents,
+    text: {
+      format: zodTextFormat(RESPONSE_FORMAT, "answer"),
+    },
   });
 };
 

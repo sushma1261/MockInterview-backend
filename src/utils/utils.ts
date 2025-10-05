@@ -90,3 +90,7 @@ export const getFeedbackPrompt = () => {
   {conversation_history}
   `);
 };
+
+export const isAIDisabled = () => {
+  return process.env.AI_DISABLED === "true";
+};
