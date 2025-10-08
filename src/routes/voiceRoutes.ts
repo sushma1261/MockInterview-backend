@@ -108,8 +108,9 @@ router.post("/getVoice", async (req: Request, res: Response) => {
     if (question) {
       if (useOpenAIModel) {
         responseFromAI = await getOpenAIResponse({ question });
+        console.log("OpenAI Disabled");
         return res.json({
-          response: responseFromAI,
+          response: "OpenAI Disabled",
         });
       } else {
         responseFromAI = await getResponse({ question });
