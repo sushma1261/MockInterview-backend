@@ -10,6 +10,7 @@ import {
   ensureUploadsDir,
   getTextEmbeddingsAPI,
   initializeVectorStore,
+  isAIDisabled,
 } from "../utils/utils";
 
 const router = Router();
@@ -43,6 +44,13 @@ router.post(
     const userId = req.user?.uid;
     if (!userId) return res.status(401).json({ error: "No user ID" });
     console.log("File received from user:", userId, req.file);
+    if (isAIDisabled()) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return res.json({
+        message: "AI features are disabled. Upload skipped.",
+        chunks: 0,
+      });
+    }
 
     try {
       const loader = new PDFLoader(req.file.path);

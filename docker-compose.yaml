@@ -1,6 +1,7 @@
+version: "3.8"
+
 services:
   postgres:
-    build: .
     image: ankane/pgvector:latest
     container_name: postgres
     restart: always
@@ -12,6 +13,38 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U system -d mockinterview"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend_app
+    restart: always
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - /app/node_modules
+    networks:
+      - backend_network
 
 volumes:
   postgres_data:
+
+networks:
+  backend_network:
+    driver: bridge

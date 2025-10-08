@@ -33,3 +33,18 @@ export const VOICE_AI_RESPONSE_CONFIG = {
     required: ["answer"],
   },
 };
+
+export const MOCK_RESPONSE = `I'm doing great, thank you for asking! I'd be happy to tell you about Agentic AI.
+
+**Agentic AI** refers to artificial intelligence systems designed to act autonomously and proactively to achieve specific goals, often over an extended period and across multiple steps. Unlike traditional AI that primarily responds to direct prompts or executes predefined commands, agentic AI takes initiative, plans, executes, and monitors its own progress in dynamic environments.
+
+These systems are characterized by their ability to understand high-level objectives, break them down into smaller, manageable sub-tasks, and make independent decisions about how to accomplish each step. They often utilize a "perception-planning-action-reflection" loop: they perceive their environment, plan a sequence of actions, execute those actions, and then reflect on the outcomes to refine their strategy or learn for future tasks.
+
+Key features include:
+*   **Goal-Oriented:** Focused on achieving a specific, often complex, end goal.
+*   **Autonomy:** Operates independently without constant human intervention.
+*   **Planning & Reasoning:** Capable of strategizing, breaking down tasks, and anticipating future needs.
+*   **Tool Use:** Can select and utilize external tools (e.g., APIs, web search, other models) to extend capabilities.
+*   **Memory & Learning:** Often maintains a context or memory of past interactions and can adapt its behavior based on feedback.
+
+Practical applications range from automated coding assistants that can build and debug software, to sophisticated personal assistants that manage schedules and make travel arrangements, to scientific research agents that can propose hypotheses and design experiments. The rise of agentic AI represents a significant shift from reactive AI to proactive, self-directed systems, promising to automate intricate workflows and tackle more complex problems with increasing efficiency and minimal human oversight.`;
