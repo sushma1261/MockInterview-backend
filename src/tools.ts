@@ -1,5 +1,18 @@
+import { FunctionDeclaration, Type } from "@google/genai";
 import { SchemaType, Tool } from "@google/generative-ai";
 
+export const answerNextQuesFuncDeclaration: FunctionDeclaration = {
+  name: "ask_next_question",
+  description:
+    "Ask the next interview question based on candidate's answers and resume. Also give question number.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      question: { type: Type.STRING },
+    },
+    required: ["question"],
+  },
+};
 // Tool 1: Ask next question
 const askNextQuestion: Tool = {
   functionDeclarations: [
@@ -16,6 +29,30 @@ const askNextQuestion: Tool = {
       },
     },
   ],
+};
+
+export const generateFeedbackFuncDeclaration: FunctionDeclaration = {
+  name: "generate_feedback",
+  description:
+    "Generate structured interview feedback based on answers so far.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      confidence_score: { type: Type.NUMBER },
+      grammar_assessment: { type: Type.STRING },
+      content_quality: { type: Type.STRING },
+      improvement_suggestions: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+      },
+    },
+    required: [
+      "confidence_score",
+      "grammar_assessment",
+      "content_quality",
+      "improvement_suggestions",
+    ],
+  },
 };
 
 // Tool 2: Generate feedback
@@ -54,7 +91,7 @@ export const handlers = {
   ask_next_question: async (args: { question: string }) => {
     return {
       question: args.question,
-      type: "next_question",
+      type: "ask_next_question",
     };
   },
 
@@ -69,7 +106,7 @@ export const handlers = {
       grammar_assessment: args.grammar_assessment,
       content_quality: args.content_quality,
       improvement_suggestions: args.improvement_suggestions,
-      type: "feedback",
+      type: "generate_feedback",
     };
   },
 };

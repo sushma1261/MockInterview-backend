@@ -3,12 +3,12 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express, { Application, Request, Response } from "express";
 import multer from "multer";
+import chat from "./routes/chat2";
 import health from "./routes/health";
 import newResume from "./routes/newResume";
 import newSearch from "./routes/newSearch";
 import resume from "./routes/resume";
 import voiceRoutes from "./routes/voiceRoutes";
-
 dotenv.config();
 
 const upload = multer({ dest: "uploads/" });
@@ -39,6 +39,7 @@ app.use("/new/search", newSearch);
 app.use("/health", health);
 
 app.use("/voice", voiceRoutes);
+app.use("/api", chat);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {
