@@ -40,6 +40,7 @@ app.use("/health", health);
 
 app.use("/voice", voiceRoutes);
 app.use("/api", chat);
+app.use("/chat", chat);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {

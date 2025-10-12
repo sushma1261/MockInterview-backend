@@ -1,48 +1,16 @@
 import {
   FunctionCallingConfigMode,
   FunctionDeclaration,
-  GoogleGenAI,
   Type,
 } from "@google/genai";
 import { Request, Response, Router } from "express";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
-import { getTextEmbeddingsAPI, initializeVectorStore } from "../utils/utils";
+import { buildInterviewPrompt } from "../utils/chatConstants";
+import { chatHandlers, fetchResumeContext, getGenAI } from "../utils/chatUtils";
+import { getTextEmbeddingsAPI } from "../utils/utils";
 
 const router = Router();
-
-// ---------------- Types ----------------
-type StartInterviewResult = {
-  type: "start_interview";
-  question: string;
-  question_type: string;
-  reasoning: string;
-  question_number: number;
-};
-
-type AskNextQuestionResult = {
-  type: "ask_next_question";
-  question: string;
-  question_number: number;
-  question_type: string;
-  reasoning: string;
-};
-
-type GenerateFeedbackResult = {
-  type: "generate_feedback";
-  confidence_score: number;
-  grammar_assessment: string;
-  content_quality: string;
-  improvement_suggestions: string[];
-  strengths: string[];
-  is_final: boolean;
-};
-
-type FunctionCallResult =
-  | StartInterviewResult
-  | AskNextQuestionResult
-  | GenerateFeedbackResult;
 
 // ---------------- In-Memory Conversation Vector Stores ----------------
 const userContexts = new Map<string, string[]>(); // resume context cache
@@ -78,48 +46,12 @@ async function fetchConversationContext(userId: string, query: string) {
   return docs.map((d) => d.pageContent).join("\n");
 }
 
-// ---------------- Resume Context ----------------
-async function fetchResumeContext(userId: string) {
-  if (!userContexts.has(userId)) {
-    console.log("Fetching resume context for user:", userId);
-    try {
-      const vectorStore = await initializeVectorStore(
-        getDBPool(),
-        getTextEmbeddingsAPI()
-      );
-      const docs = await vectorStore.similaritySearch(
-        "help me prepare for behavioral interview based on the resume uploaded.",
-        3,
-        {
-          filter: { user_id: userId },
-        }
-      );
-      userContexts.set(
-        userId,
-        docs.map((d) => d.pageContent)
-      );
-      console.log("Saved resume context, chunks:", docs.length);
-    } catch (e) {
-      console.error("Error fetching resume context:", e);
-      userContexts.set(userId, []);
-    }
-  }
-  console.log("Using cached resume context for user:", userId);
-  return userContexts.get(userId)!;
-}
-
-// ---------------- Google GenAI Client ----------------
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY!,
-});
-
 // ---------------- Function Declarations (Tools) ----------------
 
 // Tool 1: Start Interview
 const startInterviewFuncDeclaration: FunctionDeclaration = {
   name: "start_interview",
-  description:
-    "Start the interview by asking the FIRST question based on the candidate's resume and background. This should be called at the beginning of the interview.",
+  description: "Start the interview by asking the FIRST question.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -131,11 +63,11 @@ const startInterviewFuncDeclaration: FunctionDeclaration = {
         type: Type.STRING,
         description: "Type of question: 'behavioral' or 'technical'",
       },
-      reasoning: {
-        type: Type.STRING,
-        description:
-          "Brief explanation of why this question is relevant based on the resume",
-      },
+      // reasoning: {
+      //   type: Type.STRING,
+      //   description:
+      //     "Brief explanation of why this question is relevant based on the resume",
+      // },
     },
     required: [
       "question",
@@ -149,7 +81,7 @@ const startInterviewFuncDeclaration: FunctionDeclaration = {
 const askNextQuesFuncDeclaration: FunctionDeclaration = {
   name: "ask_next_question",
   description:
-    "Ask the next follow-up interview question based on candidate's previous answers.",
+    "Ask the next follow-up interview question based on candidate's previous answers or can choose to ask a new question.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -237,47 +169,6 @@ const interviewTools = [
   },
 ];
 
-// ---------------- Handlers ----------------
-const handlers = {
-  start_interview: async (args: {
-    question: string;
-    question_type: string;
-    reasoning: string;
-  }): Promise<StartInterviewResult> => {
-    return {
-      type: "start_interview",
-      question_number: 1,
-      ...args,
-    };
-  },
-
-  ask_next_question: async (args: {
-    question: string;
-    question_number: number;
-    question_type: string;
-    reasoning: string;
-  }): Promise<AskNextQuestionResult> => {
-    return {
-      type: "ask_next_question",
-      ...args,
-    };
-  },
-
-  generate_feedback: async (args: {
-    confidence_score: number;
-    grammar_assessment: string;
-    content_quality: string;
-    improvement_suggestions: string[];
-    strengths: string[];
-    is_final: boolean;
-  }): Promise<GenerateFeedbackResult> => {
-    return {
-      type: "generate_feedback",
-      ...args,
-    };
-  },
-};
-
 // ---------------- Chat Sessions ----------------
 const chatSessions = new Map<string, any>();
 
@@ -300,9 +191,9 @@ async function processInterviewStream(
     if (chunk.functionCalls && chunk.functionCalls.length > 0) {
       const functionCall = chunk.functionCalls[0];
 
-      if (functionCall.name in handlers) {
-        functionCallResult = await handlers[
-          functionCall.name as keyof typeof handlers
+      if (functionCall.name in chatHandlers) {
+        functionCallResult = await chatHandlers[
+          functionCall.name as keyof typeof chatHandlers
         ](functionCall.args as any);
 
         // Store in conversation history
@@ -318,9 +209,6 @@ async function processInterviewStream(
   return { fullText, functionCallResult };
 }
 
-// ---------------- Routes ----------------
-
-// Single unified /chat endpoint
 router.post("/chat", authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.uid;
@@ -342,29 +230,17 @@ router.post("/chat", authenticate, async (req: Request, res: Response) => {
       isNewSession = true;
 
       // Fetch resume context
-      const retrievedDocs = await fetchResumeContext(userId);
+      const retrievedDocs = await fetchResumeContext(userId, userContexts);
       const resumeContext = retrievedDocs.join("\n\n");
 
       // Create new chat session
-      chat = ai.chats.create({
+      chat = getGenAI.chats.create({
         model: "gemini-2.0-flash-exp",
         config: {
           temperature: 0.7,
-          systemInstruction: `You are an expert interview assistant. You will conduct a comprehensive interview by:
-
-1. STARTING: Use 'start_interview' to ask the FIRST question based on the candidate's resume
-2. FOLLOWING UP: Use 'ask_next_question' to probe deeper based on their answers
-3. CONCLUDING: Use 'generate_feedback' after 3-5 questions or when you have enough information
-
-Guidelines:
-- Tailor questions to the candidate's experience and background
-- Mix behavioral and technical questions
-- Ask clarifying questions when answers are vague
-- Be encouraging, professional, and conversational
-- Provide constructive, actionable feedback
-
-CANDIDATE RESUME/BACKGROUND:
-${resumeContext}`,
+          systemInstruction: buildInterviewPrompt({ resumeContext }),
+          maxOutputTokens: 1000,
+          // Enable tool usage
           tools: interviewTools,
           toolConfig: {
             functionCallingConfig: {
@@ -396,10 +272,10 @@ ${resumeContext}`,
         "interview"
       );
       prompt = `
-CONVERSATION SO FAR:
-${conversationHistory}
+        CONVERSATION SO FAR:
+        ${conversationHistory}
 
-The candidate has requested feedback or wants to end the interview. Please provide comprehensive feedback using the 'generate_feedback' function. Set 'is_final' to true.`;
+        The candidate has requested feedback or wants to end the interview. Please provide comprehensive feedback using the 'generate_feedback' function. Set 'is_final' to true.`;
     } else if (action === "skip") {
       // Skip to next question without waiting for answer
       const conversationHistory = await fetchConversationContext(
@@ -407,10 +283,10 @@ The candidate has requested feedback or wants to end the interview. Please provi
         "interview"
       );
       prompt = `
-CONVERSATION SO FAR:
-${conversationHistory}
+        CONVERSATION SO FAR:
+        ${conversationHistory}
 
-The candidate wants to skip the current question. Ask the next question using 'ask_next_question'.`;
+        The candidate wants to skip the current question. Ask the next question using 'ask_next_question'.`;
     } else {
       // Default: Continue with candidate's answer
       if (!message) {
@@ -423,17 +299,19 @@ The candidate wants to skip the current question. Ask the next question using 'a
       );
 
       prompt = `
-CONVERSATION HISTORY:
-${conversationHistory}
+        CONVERSATION HISTORY:
+        ${conversationHistory}
 
-CANDIDATE'S ANSWER${question_number ? ` (Question #${question_number})` : ""}:
-${message}
+        CANDIDATE'S ANSWER${
+          question_number ? ` (Question #${question_number})` : ""
+        }:
+        ${message}
 
-Based on this answer, decide whether to:
-1. Ask a follow-up question using 'ask_next_question' (if the answer needs more depth or clarification)
-2. Provide feedback using 'generate_feedback' (if you have enough information after 3-5 questions)
+        Based on this answer, decide whether to:
+        1. Ask a follow-up question using 'ask_next_question' (if the answer needs more depth or clarification)
+        2. Provide feedback using 'generate_feedback' (if you have enough information after 3-5 questions)
 
-Be intelligent about your choice - don't ask too many questions, but also don't end too early.`;
+        Be intelligent about your choice - don't ask too many questions, but also don't end too early.`;
 
       // Store the candidate's answer
       await storeConversationTurn(
