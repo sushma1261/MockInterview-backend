@@ -1,8 +1,7 @@
-import { FunctionCallingConfigMode } from "@google/genai";
-import { buildInterviewPrompt } from "../../utils/chatConstants";
-import { getGenAI } from "../../utils/chatUtils";
-import { interviewTools } from "../config/InterviewToolsConfig";
-import { ChatSessionConfig } from "../types/types";
+import { getToolConfig } from "../config/InterviewToolsConfig";
+import { PromptBuilder } from "../config/PromptBuilder";
+import { ChatSessionConfig } from "../types/interviewTypes";
+import { getGenAI } from "../utils/chatUtils";
 
 /**
  * Manages GenAI chat sessions for users
@@ -29,17 +28,14 @@ export class ChatSessionManager {
    * Create a new chat session with resume context
    */
   public createSession(userId: string, resumeContext: string): any {
+    const toolConfig = getToolConfig();
     const config: ChatSessionConfig = {
       model: "gemini-2.0-flash-exp",
       temperature: 0.7,
-      systemInstruction: buildInterviewPrompt({ resumeContext }),
+      systemInstruction: PromptBuilder.buildSystemPrompt({ resumeContext }),
       maxOutputTokens: 1000,
-      tools: interviewTools,
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingConfigMode.AUTO,
-        },
-      },
+      tools: toolConfig.tools,
+      toolConfig: toolConfig.toolConfig,
     };
 
     const chat = getGenAI.chats.create({

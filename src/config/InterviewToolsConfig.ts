@@ -3,7 +3,7 @@ import { FunctionDeclaration, Type } from "@google/genai";
 /**
  * Function declaration for starting the interview
  */
-export const startInterviewFuncDeclaration: FunctionDeclaration = {
+const startInterviewFuncDeclaration: FunctionDeclaration = {
   name: "start_interview",
   description: "Start the interview by asking the FIRST question.",
   parameters: {
@@ -30,7 +30,7 @@ export const startInterviewFuncDeclaration: FunctionDeclaration = {
 /**
  * Function declaration for asking next question
  */
-export const askNextQuesFuncDeclaration: FunctionDeclaration = {
+const askNextQuesFuncDeclaration: FunctionDeclaration = {
   name: "ask_next_question",
   description:
     "Ask the next follow-up interview question based on candidate's previous answers or can choose to ask a new question.",
@@ -62,7 +62,7 @@ export const askNextQuesFuncDeclaration: FunctionDeclaration = {
 /**
  * Function declaration for generating feedback
  */
-export const generateFeedbackFuncDeclaration: FunctionDeclaration = {
+const generateFeedbackFuncDeclaration: FunctionDeclaration = {
   name: "generate_feedback",
   description:
     "Generate interview feedback. Call this when you have gathered enough information (typically after 3-5 questions) or when explicitly requested.",
@@ -110,7 +110,7 @@ export const generateFeedbackFuncDeclaration: FunctionDeclaration = {
 /**
  * Combined tools configuration for GenAI
  */
-export const interviewTools = [
+const interviewTools = [
   {
     functionDeclarations: [
       startInterviewFuncDeclaration,

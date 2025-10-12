@@ -6,12 +6,13 @@ import multer from "multer";
 import { uploadsDir } from "../constants";
 import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
+
 import {
   ensureUploadsDir,
   getTextEmbeddingsAPI,
   initializeVectorStore,
   isAIDisabled,
-} from "../utils/utils";
+} from "../utils/chatUtils";
 
 const router = Router();
 

@@ -1,15 +1,32 @@
 import { GoogleGenAI } from "@google/genai";
+import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import fs from "fs/promises";
+import { Pool } from "pg";
+import { uploadsDir } from "../constants";
 import { getDBPool } from "../db/pool";
-import { getTextEmbeddingsAPI, initializeVectorStore } from "./utils";
-
+import {
+  AskNextQuestionResult,
+  GenerateFeedbackResult,
+  QuestionType,
+  StartInterviewResult,
+} from "../types/interviewTypes";
 export const getGenAI = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
 
+export async function ensureUploadsDir() {
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+  } catch (err) {
+    console.error("Error ensuring uploads dir:", err);
+  }
+}
+
 export const chatHandlers = {
   start_interview: async (args: {
     question: string;
-    question_type: string;
+    question_type: QuestionType;
     reasoning: string;
   }): Promise<StartInterviewResult> => {
     return {
@@ -22,7 +39,7 @@ export const chatHandlers = {
   ask_next_question: async (args: {
     question: string;
     question_number: number;
-    question_type: string;
+    question_type: QuestionType;
     reasoning: string;
   }): Promise<AskNextQuestionResult> => {
     return {
@@ -46,8 +63,14 @@ export const chatHandlers = {
   },
 };
 
-// ---------------- Resume Context ----------------
-export const fetchResumeContext = async (
+export const getTextEmbeddingsAPI = () => {
+  return new GoogleGenerativeAIEmbeddings({
+    apiKey: process.env.GEMINI_API_KEY!,
+    model: "text-embedding-004",
+  });
+};
+
+export const fetchResumeContextFromDB = async (
   userId: string,
   userContexts: Map<string, string[]>
 ) => {
@@ -77,4 +100,25 @@ export const fetchResumeContext = async (
   }
   console.log("Using cached resume context for user:", userId);
   return userContexts.get(userId)!;
+};
+
+export const vectorStoreTableName = "resume_chunks";
+
+export const initializeVectorStore = async (
+  pool: Pool,
+  textEmbeddingsAPI: GoogleGenerativeAIEmbeddings
+) => {
+  return PGVectorStore.initialize(textEmbeddingsAPI, {
+    pool,
+    tableName: vectorStoreTableName,
+    columns: {
+      idColumnName: "id",
+      vectorColumnName: "embedding",
+      contentColumnName: "text",
+      metadataColumnName: "metadata",
+    },
+  });
+};
+export const isAIDisabled = () => {
+  return process.env.AI_DISABLED === "true";
 };

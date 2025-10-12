@@ -1,7 +1,7 @@
 import { Request, Response, Router } from "express";
-import { authenticate } from "../../middleware/auth";
 import { InterviewController } from "../controllers/InterviewControllers";
-import { ChatRequest } from "../types/types";
+import { authenticate } from "../middleware/auth";
+import { ChatRequest } from "../types/interviewTypes";
 
 const router = Router();
 const interviewController = new InterviewController();

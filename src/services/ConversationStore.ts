@@ -1,5 +1,5 @@
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { getTextEmbeddingsAPI } from "../../utils/utils";
+import { getTextEmbeddingsAPI } from "../utils/chatUtils";
 
 /**
  * Manages conversation memory using vector stores for semantic search

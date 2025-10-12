@@ -8,7 +8,7 @@ import {
   ChatResponse,
   InterviewAction,
   StreamProcessingResult,
-} from "../types/types";
+} from "../types/interviewTypes";
 
 /**
  * High-level controller for interview operations
@@ -150,7 +150,6 @@ export class InterviewController {
 
     if (functionCallResult) {
       response.type = functionCallResult.type;
-      response.data = functionCallResult;
 
       // Type-specific response fields
       if (

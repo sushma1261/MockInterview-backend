@@ -1,4 +1,4 @@
-import { fetchResumeContext as fetchResumeFromDB } from "../../utils/chatUtils";
+import { fetchResumeContextFromDB } from "../utils/chatUtils";
 
 /**
  * Manages resume context caching and retrieval
@@ -34,7 +34,7 @@ export class ResumeContextService {
 
     // Fetch from source (database/vector store)
     console.log(`Fetching fresh resume context for user: ${userId}`);
-    const retrievedDocs = await fetchResumeFromDB(userId, new Map());
+    const retrievedDocs = await fetchResumeContextFromDB(userId, new Map());
 
     // Cache the result
     this.setCache(userId, retrievedDocs);
