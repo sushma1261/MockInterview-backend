@@ -1,4 +1,7 @@
-import { FunctionCallResult, StreamProcessingResult } from "../types/types";
+import {
+  FunctionCallResult,
+  StreamProcessingResult,
+} from "../types/interviewTypes";
 import { chatHandlers } from "../utils/chatUtils";
 import { ConversationStore } from "./ConversationStore";
 

@@ -28,11 +28,10 @@ export class PromptBuilder {
       }:
       ${candidateAnswer}
 
-Based on this answer, decide whether to:
-1. Ask a follow-up question using 'ask_next_question' (if the answer needs more depth or clarification)
-2. Provide feedback using 'generate_feedback' (if you have enough information after 3-5 questions)
-
-Be intelligent about your choice - don't ask too many questions, but also don't end too early.`;
+      Based on this answer, decide whether to:
+      1. Ask a follow-up question using 'ask_next_question' (if the answer needs more depth or clarification)
+      2. Provide feedback using 'generate_feedback' (if you have enough information after 2-3 questions)
+      Be intelligent about your choice - don't ask too many questions, but also don't end too early.`;
   }
 
   /**
@@ -57,6 +56,14 @@ Be intelligent about your choice - don't ask too many questions, but also don't 
       The candidate wants to skip the current question. Ask the next question using 'ask_next_question'.`;
   }
 
+  public static buildNoAnswerPrompt(conversationHistory: string): string {
+    return `
+      CONVERSATION SO FAR:
+      ${conversationHistory}
+
+      The candidate did not provide an answer. Ask the next question using 'ask_next_question'.`;
+  }
+
   /**
    * Build prompt based on action type
    */
@@ -77,6 +84,9 @@ Be intelligent about your choice - don't ask too many questions, but also don't 
 
       case InterviewAction.SKIP:
         return this.buildSkipPrompt(conversationHistory);
+
+      case InterviewAction.NO_ANSWER:
+        return this.buildNoAnswerPrompt(conversationHistory);
 
       case InterviewAction.CONTINUE:
       default:
@@ -120,15 +130,5 @@ Be intelligent about your choice - don't ask too many questions, but also don't 
         - Be specific in your feedback with actionable suggestions
         - Acknowledge good answers and areas of strength
         - Set is_final to true only when giving final comprehensive feedback`;
-  }
-
-  /**
-   * Format conversation history for display
-   */
-  public static formatConversationHistory(history: string): string {
-    if (!history || history.trim().length === 0) {
-      return "No previous conversation.";
-    }
-    return history;
   }
 }

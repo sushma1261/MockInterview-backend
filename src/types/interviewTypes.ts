@@ -2,6 +2,7 @@ export enum InterviewAction {
   START = "start",
   RESTART = "restart",
   CONTINUE = "continue",
+  NO_ANSWER = "no_answer",
   FEEDBACK = "feedback",
   END = "end",
   SKIP = "skip",

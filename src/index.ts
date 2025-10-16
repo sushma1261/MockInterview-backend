@@ -27,7 +27,7 @@ app.use(express.json());
 
 // Testing Routes
 app.use("/health", health);
-app.use("/chat", newChat);
+app.use("/api", newChat);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {
