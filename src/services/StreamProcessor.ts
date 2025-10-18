@@ -6,6 +6,18 @@ import { chatHandlers } from "../utils/chatUtils";
 import { ConversationStore } from "./ConversationStore";
 
 /**
+ * Callback function type for streaming chunks to frontend
+ */
+export type StreamChunkCallback = (chunk: {
+  type: "text" | "function_call" | "complete" | "error";
+  content?: string;
+  functionName?: string;
+  functionResult?: FunctionCallResult;
+  fullText?: string;
+  error?: string;
+}) => void | Promise<void>;
+
+/**
  * Processes streaming responses from GenAI
  */
 export class StreamProcessor {
@@ -17,6 +29,7 @@ export class StreamProcessor {
 
   /**
    * Process a streaming response and extract text + function calls
+   * WITHOUT streaming to frontend (original behavior)
    */
   public async processStream(
     stream: AsyncGenerator<any>,
@@ -43,6 +56,72 @@ export class StreamProcessor {
       }
     } catch (error) {
       console.error("Error processing stream:", error);
+      throw new Error(
+        `Stream processing failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+
+    return { fullText, functionCallResult };
+  }
+
+  /**
+   * Process a streaming response WITH callback for frontend streaming
+   * Calls onChunk for each chunk received
+   */
+  public async processStreamWithCallback(
+    stream: AsyncGenerator<any>,
+    userId: string,
+    onChunk: StreamChunkCallback
+  ): Promise<StreamProcessingResult> {
+    let fullText = "";
+    let functionCallResult: FunctionCallResult | null = null;
+
+    try {
+      for await (const chunk of stream) {
+        // Handle text chunks
+        if (chunk.text) {
+          fullText += chunk.text;
+
+          // Send text chunk to frontend via callback
+          await onChunk({
+            type: "text",
+            content: chunk.text,
+          });
+        }
+
+        // Handle function calls
+        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+          const functionCall = chunk.functionCalls[0];
+          functionCallResult = await this.processFunctionCall(
+            functionCall,
+            userId
+          );
+
+          // Send function call result to frontend via callback
+          await onChunk({
+            type: "function_call",
+            functionName: functionCall.name,
+            functionResult: functionCallResult || undefined,
+          });
+        }
+      }
+
+      // Send completion
+      await onChunk({
+        type: "complete",
+        fullText: fullText,
+      });
+    } catch (error) {
+      console.error("Error processing stream with callback:", error);
+
+      // Send error to frontend
+      await onChunk({
+        type: "error",
+        error: error instanceof Error ? error.message : String(error),
+      });
+
       throw new Error(
         `Stream processing failed: ${
           error instanceof Error ? error.message : String(error)

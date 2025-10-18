@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { Embeddings } from "@langchain/core/embeddings";
 import fs from "fs/promises";
 import { Pool } from "pg";
 import { uploadsDir } from "../constants";
@@ -11,6 +11,64 @@ import {
   QuestionType,
   StartInterviewResult,
 } from "../types/interviewTypes";
+
+/**
+ * Custom embeddings implementation using Google GenAI SDK
+ * This works around issues with GoogleGenerativeAIEmbeddings
+ */
+class CustomGoogleGenAIEmbeddings extends Embeddings {
+  private genai: GoogleGenAI;
+  private modelName: string;
+
+  constructor(apiKey: string, modelName: string) {
+    super({});
+    this.genai = new GoogleGenAI({ apiKey });
+    this.modelName = modelName;
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    const embeddings: number[][] = [];
+
+    // Process in batches to avoid rate limits
+    for (const text of texts) {
+      const embedding = await this.embedQuery(text);
+      embeddings.push(embedding);
+    }
+
+    return embeddings;
+  }
+
+  async embedQuery(text: string): Promise<number[]> {
+    try {
+      const result = await this.genai.models.embedContent({
+        model: this.modelName,
+        contents: text,
+        config: {
+          outputDimensionality: 768, // Force 768 dimensions instead of default 3072
+        },
+      });
+
+      if (!result.embeddings || result.embeddings.length === 0) {
+        throw new Error(
+          `No embeddings returned for text: ${text.substring(0, 50)}...`
+        );
+      }
+
+      const embedding = result.embeddings[0];
+      if (!embedding.values || embedding.values.length === 0) {
+        throw new Error(
+          `Empty embedding values for text: ${text.substring(0, 50)}...`
+        );
+      }
+
+      return embedding.values;
+    } catch (error) {
+      console.error("Embedding generation error:", error);
+      throw error;
+    }
+  }
+}
+
 export const getGenAI = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
@@ -64,50 +122,74 @@ export const chatHandlers = {
 };
 
 export const getTextEmbeddingsAPI = () => {
-  return new GoogleGenerativeAIEmbeddings({
-    apiKey: process.env.GEMINI_API_KEY!,
-    model: "text-embedding-004",
-  });
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY is not configured");
+  }
+
+  // Use custom GoogleGenAI implementation with gemini-embedding-001 (768 dimensions)
+  return new CustomGoogleGenAIEmbeddings(
+    process.env.GEMINI_API_KEY,
+    "gemini-embedding-001"
+  );
 };
 
 export const fetchResumeContextFromDB = async (
   userId: string,
+  resumeId: number | null,
   userContexts: Map<string, string[]>
 ) => {
-  if (!userContexts.has(userId)) {
-    console.log("Fetching resume context for user:", userId);
+  // Create a unique cache key based on userId and resumeId
+  const cacheKey = resumeId ? `${userId}:resume:${resumeId}` : userId;
+
+  if (!userContexts.has(cacheKey)) {
+    console.log(
+      `Fetching resume context for user: ${userId}, resume: ${
+        resumeId || "all"
+      }`
+    );
     try {
       const vectorStore = await initializeVectorStore(
         getDBPool(),
         getTextEmbeddingsAPI()
       );
+
+      // Build filter based on whether resumeId is provided
+      const filter: any = { user_id: userId };
+      if (resumeId !== null) {
+        filter.resume_id = resumeId;
+      }
+
       const docs = await vectorStore.similaritySearch(
         "help me prepare for behavioral interview based on the resume uploaded.",
-        3,
-        {
-          filter: { user_id: userId },
-        }
+        resumeId !== null ? 5 : 3, // Get more chunks if specific resume
+        { filter }
       );
+
       userContexts.set(
-        userId,
+        cacheKey,
         docs.map((d) => d.pageContent)
       );
-      console.log("Saved resume context, chunks:", docs.length);
+      console.log(
+        `Saved resume context (${
+          resumeId ? "resume " + resumeId : "all resumes"
+        }), chunks: ${docs.length}`
+      );
     } catch (e) {
       console.error("Error fetching resume context:", e);
-      userContexts.set(userId, []);
+      userContexts.set(cacheKey, []);
     }
   }
-  console.log("Using cached resume context for user:", userId);
-  return userContexts.get(userId)!;
+  console.log(`Using cached resume context for key: ${cacheKey}`);
+  return userContexts.get(cacheKey)!;
 };
 
 export const vectorStoreTableName = "resume_chunks";
 
 export const initializeVectorStore = async (
   pool: Pool,
-  textEmbeddingsAPI: GoogleGenerativeAIEmbeddings
+  textEmbeddingsAPI: Embeddings
 ) => {
+  console.log("Initializing PGVectorStore with table:", vectorStoreTableName);
   return PGVectorStore.initialize(textEmbeddingsAPI, {
     pool,
     tableName: vectorStoreTableName,

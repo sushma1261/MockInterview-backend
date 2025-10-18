@@ -62,12 +62,13 @@ router.post(
         chunkOverlap: 100,
       });
       const docs = await splitter.splitDocuments(rawDocs);
-      // Attach metadata to docs before embedding
-      const docsWithUserId = docs.map((doc) => ({
+      // Attach metadata to docs before embedding (including chunk index)
+      const docsWithUserId = docs.map((doc, index) => ({
         ...doc,
         metadata: {
           ...doc.metadata,
           user_id: userId,
+          chunk_index: index, // Track the order of chunks
         },
       }));
 

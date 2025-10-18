@@ -100,19 +100,30 @@ export class ConversationStore {
   ): Promise<string> {
     const store = this.getOrCreateStore(userId);
 
-    // Check if store has any documents
-    const allDocs = await store.similaritySearch("", 1).catch(() => []);
-    if (allDocs.length === 0) {
-      console.log(`No conversation history for user: ${userId}`);
+    // Check if query is empty
+    if (!query || query.trim().length === 0) {
+      console.log(`Empty query provided for user: ${userId}`);
       return "";
     }
 
-    const docs = await store.similaritySearch(query, maxResults);
-    console.log(
-      `Fetched ${docs.length} conversation context docs for user: ${userId}`
-    );
+    // Check if store has any documents by getting all documents directly
+    try {
+      const docs = await store.similaritySearch(query, maxResults);
 
-    return docs.map((d) => d.pageContent).join("\n");
+      if (docs.length === 0) {
+        console.log(`No conversation history for user: ${userId}`);
+        return "";
+      }
+
+      console.log(
+        `Fetched ${docs.length} conversation context docs for user: ${userId}`
+      );
+
+      return docs.map((d) => d.pageContent).join("\n");
+    } catch (error) {
+      console.log(`No conversation history available for user: ${userId}`);
+      return "";
+    }
   }
 
   /**

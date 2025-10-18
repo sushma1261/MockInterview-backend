@@ -1,5 +1,6 @@
 import { getToolConfig } from "../config/InterviewToolsConfig";
 import { PromptBuilder } from "../config/PromptBuilder";
+import { AI_MODEL } from "../constants";
 import { ChatSessionConfig } from "../types/interviewTypes";
 import { getGenAI } from "../utils/chatUtils";
 
@@ -27,12 +28,19 @@ export class ChatSessionManager {
   /**
    * Create a new chat session with resume context
    */
-  public createSession(userId: string, resumeContext: string): any {
+  public createSession(
+    userId: string,
+    resumeContext: string,
+    jobDescription?: string
+  ): any {
     const toolConfig = getToolConfig();
     const config: ChatSessionConfig = {
-      model: "gemini-2.0-flash-exp",
+      model: AI_MODEL,
       temperature: 0.7,
-      systemInstruction: PromptBuilder.buildSystemPrompt({ resumeContext }),
+      systemInstruction: PromptBuilder.buildSystemPrompt({
+        resumeContext,
+        jobDescription,
+      }),
       maxOutputTokens: 1000,
       tools: toolConfig.tools,
       toolConfig: toolConfig.toolConfig,
@@ -82,20 +90,28 @@ export class ChatSessionManager {
   /**
    * Get or create a session
    */
-  public getOrCreateSession(userId: string, resumeContext: string): any {
+  public getOrCreateSession(
+    userId: string,
+    resumeContext: string,
+    jobDescription?: string
+  ): any {
     const existingSession = this.getSession(userId);
     if (existingSession) {
       return existingSession;
     }
-    return this.createSession(userId, resumeContext);
+    return this.createSession(userId, resumeContext, jobDescription);
   }
 
   /**
    * Restart session (delete old and create new)
    */
-  public restartSession(userId: string, resumeContext: string): any {
+  public restartSession(
+    userId: string,
+    resumeContext: string,
+    jobDescription?: string
+  ): any {
     this.deleteSession(userId);
-    return this.createSession(userId, resumeContext);
+    return this.createSession(userId, resumeContext, jobDescription);
   }
 
   /**
@@ -136,5 +152,15 @@ export class ChatSessionManager {
    */
   public getActiveUserIds(): string[] {
     return Array.from(this.sessions.keys());
+  }
+
+  /**
+   * Set the selected resumeId for the user's session
+   */
+  setSessionResumeId(userId: string, resumeId: number): void {
+    const session = this.getSession(userId);
+    if (session) {
+      session.resumeId = resumeId;
+    }
   }
 }

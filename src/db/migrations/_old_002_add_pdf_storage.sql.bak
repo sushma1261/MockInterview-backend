@@ -1,0 +1,11 @@
+-- Add PDF binary storage column to resumes table
+-- This allows storing the actual PDF file in the database
+
+ALTER TABLE resumes 
+ADD COLUMN IF NOT EXISTS file_data BYTEA;
+
+-- Add comment to explain the column
+COMMENT ON COLUMN resumes.file_data IS 'Binary data of the PDF file (optional, can use file_path instead)';
+
+-- Note: file_path is still kept for backward compatibility
+-- You can use either file_data (stored in DB) or file_path (stored on disk)

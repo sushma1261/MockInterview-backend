@@ -8,7 +8,7 @@ export class PromptBuilder {
    * Build prompt for starting a new interview
    */
   public static buildStartPrompt(): string {
-    return "Please start the interview by asking the FIRST question. Use the 'start_interview' function with a question relevant to the candidate's background.";
+    return "Please start the interview by asking the FIRST question. Use the 'start_interview' function with a question relevant to the candidate's background or based on the job description if provided.";
   }
 
   /**
@@ -100,16 +100,24 @@ export class PromptBuilder {
 
   public static buildSystemPrompt({
     resumeContext,
+    jobDescription,
   }: {
     resumeContext: string;
+    jobDescription?: string;
   }): string {
+    console.log(
+      `Building system prompt. Job description provided: ${!!jobDescription}`
+    );
     return `You are an experienced interviewer conducting a behavioral and technical interview.
 
         CANDIDATE'S RESUME CONTEXT:
         ${resumeContext}
 
+        JOB DESCRIPTION:
+        ${jobDescription}
+
         YOUR ROLE:
-        - Conduct a professional interview based on the candidate's resume
+        - Conduct a professional interview based on the candidate's resume and the job description (if provided)
         - Ask relevant behavioral and technical questions
         - Provide constructive feedback on their answers at end
         - Be encouraging but honest in your assessment

@@ -20,7 +20,7 @@ const startInterviewFuncDeclaration: FunctionDeclaration = {
       reasoning: {
         type: Type.STRING,
         description:
-          "Brief explanation of why this question is relevant based on the resume",
+          "Brief explanation of why this question is relevant based on the resume and job description also tell if you recieved a job description or not",
       },
     },
     required: ["question", "question_type"],

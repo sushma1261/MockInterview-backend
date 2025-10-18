@@ -1,0 +1,43 @@
+-- Make resume_id and chunk_index nullable to work with PGVectorStore
+-- The data will be stored in the metadata JSONB column instead
+-- We'll use triggers to extract and populate these fields automatically
+
+-- First, drop the unique constraint (which will drop the index automatically)
+ALTER TABLE resume_chunks DROP CONSTRAINT IF EXISTS resume_chunks_resume_id_chunk_index_key;
+
+-- Now make the columns nullable
+ALTER TABLE resume_chunks ALTER COLUMN resume_id DROP NOT NULL;
+ALTER TABLE resume_chunks ALTER COLUMN chunk_index DROP NOT NULL;
+
+-- Create a trigger function to auto-populate resume_id and chunk_index from metadata
+CREATE OR REPLACE FUNCTION populate_resume_chunk_fields()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Extract resume_id from metadata if it exists
+  IF NEW.metadata ? 'resume_id' THEN
+    NEW.resume_id := (NEW.metadata->>'resume_id')::INTEGER;
+  END IF;
+  
+  -- Extract chunk_index from metadata if it exists
+  IF NEW.metadata ? 'chunk_index' THEN
+    NEW.chunk_index := (NEW.metadata->>'chunk_index')::INTEGER;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to run before insert
+DROP TRIGGER IF EXISTS trigger_populate_resume_chunk_fields ON resume_chunks;
+CREATE TRIGGER trigger_populate_resume_chunk_fields
+  BEFORE INSERT ON resume_chunks
+  FOR EACH ROW
+  EXECUTE FUNCTION populate_resume_chunk_fields();
+
+-- Add a unique constraint based on the populated fields
+-- This ensures we don't have duplicate chunks
+CREATE UNIQUE INDEX idx_resume_chunks_unique ON resume_chunks(resume_id, chunk_index)
+WHERE resume_id IS NOT NULL AND chunk_index IS NOT NULL;
+
+COMMENT ON COLUMN resume_chunks.resume_id IS 'Foreign key to resumes table - auto-populated from metadata JSONB via trigger';
+COMMENT ON COLUMN resume_chunks.chunk_index IS 'Sequential index of chunk - auto-populated from metadata JSONB via trigger';

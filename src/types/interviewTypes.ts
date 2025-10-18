@@ -55,6 +55,7 @@ export interface ChatRequest {
   message?: string;
   action?: InterviewAction;
   question_number?: number;
+  job_description?: string;
 }
 
 export interface ChatResponse {
@@ -69,6 +70,7 @@ export interface ChatResponse {
   is_complete?: boolean;
   context?: string;
   turn_count?: number;
+  data?: FunctionCallResult;
 }
 
 export interface StreamProcessingResult {

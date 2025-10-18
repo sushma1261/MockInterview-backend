@@ -6,6 +6,7 @@ import multer from "multer";
 import newChat from "./routes/chat.route";
 import health from "./routes/health";
 import newResume from "./routes/newResume";
+import userProfileRoutes from "./routes/userProfile.route";
 dotenv.config();
 
 const upload = multer({ dest: "uploads/" });
@@ -28,6 +29,9 @@ app.use(express.json());
 // Testing Routes
 app.use("/health", health);
 app.use("/api", newChat);
+
+// User Profile Routes (protected)
+app.use("/api/user", userProfileRoutes);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {
