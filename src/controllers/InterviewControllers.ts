@@ -28,10 +28,10 @@ export class InterviewController {
   private jobDescriptionService: JobDescriptionService;
 
   constructor(pool: Pool, redis: Redis) {
-    this.conversationStore = ConversationStore.getInstance();
+    this.conversationStore = ConversationStore.getInstance(redis);
     this.resumeContextService = ResumeContextService.getInstance(pool, redis);
     this.jobDescriptionService = JobDescriptionService.getInstance();
-    this.chatSessionManager = ChatSessionManager.getInstance();
+    this.chatSessionManager = ChatSessionManager.getInstance(redis);
     this.streamProcessor = new StreamProcessor();
   }
 
@@ -92,8 +92,17 @@ export class InterviewController {
       throw new Error(validation.error || "Invalid stream response");
     }
 
+    // Store assistant response to conversation history
+    if (streamResult.fullText) {
+      await this.conversationStore.storeMessage(
+        userId,
+        streamResult.fullText,
+        "ai"
+      );
+    }
+
     // Build and return response
-    const response = this.buildResponse(
+    const response = await this.buildResponse(
       streamResult,
       action || InterviewAction.CONTINUE,
       userId
@@ -165,8 +174,17 @@ export class InterviewController {
       throw new Error(validation.error || "Invalid stream response");
     }
 
+    // Store assistant response to conversation history
+    if (streamResult.fullText) {
+      await this.conversationStore.storeMessage(
+        userId,
+        streamResult.fullText,
+        "ai"
+      );
+    }
+
     // Build and return response
-    const response = this.buildResponse(
+    const response = await this.buildResponse(
       streamResult,
       action || InterviewAction.CONTINUE,
       userId
@@ -265,17 +283,17 @@ export class InterviewController {
   /**
    * Build chat response object
    */
-  private buildResponse(
+  private async buildResponse(
     streamResult: StreamProcessingResult,
     action: string,
     userId: string
-  ): ChatResponse {
+  ): Promise<ChatResponse> {
     const { fullText, functionCallResult } = streamResult;
 
     const response: ChatResponse = {
       success: true,
       action: action,
-      turn_count: this.chatSessionManager.getSessionTurnCount(userId),
+      turn_count: await this.chatSessionManager.getSessionTurnCount(userId),
     };
 
     if (functionCallResult) {
@@ -317,16 +335,16 @@ export class InterviewController {
   /**
    * Get session status
    */
-  getStatus(userId: string): {
+  async getStatus(userId: string): Promise<{
     has_active_session: boolean;
     turn_count: number;
     has_history: boolean;
     has_job_description: boolean;
-  } {
+  }> {
     return {
-      has_active_session: this.chatSessionManager.hasSession(userId),
-      turn_count: this.chatSessionManager.getSessionTurnCount(userId),
-      has_history: this.conversationStore.hasHistory(userId),
+      has_active_session: await this.chatSessionManager.hasSession(userId),
+      turn_count: await this.chatSessionManager.getSessionTurnCount(userId),
+      has_history: await this.conversationStore.hasHistory(userId),
       has_job_description:
         !!this.jobDescriptionService.getJobDescription(userId),
     };
@@ -335,10 +353,10 @@ export class InterviewController {
   /**
    * Clear all data (useful for testing)
    */
-  clearAll(): void {
-    this.chatSessionManager.clearAll();
-    this.conversationStore.clearAll();
-    this.resumeContextService.clearAll();
+  async clearAll(): Promise<void> {
+    await this.chatSessionManager.clearAll();
+    await this.conversationStore.clearAll();
+    await this.resumeContextService.clearAll();
     this.jobDescriptionService.clearAll();
   }
 }

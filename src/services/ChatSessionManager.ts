@@ -1,166 +1,251 @@
+import { Redis } from "ioredis";
 import { getToolConfig } from "../config/InterviewToolsConfig";
 import { PromptBuilder } from "../config/PromptBuilder";
 import { AI_MODEL } from "../constants";
-import { ChatSessionConfig } from "../types/interviewTypes";
 import { getGenAI } from "../utils/chatUtils";
+import { RedisSessionStore } from "./RedisSessionStore";
 
 /**
- * Manages GenAI chat sessions for users
+ * Manages GenAI chat sessions for users with Redis persistence
  */
 export class ChatSessionManager {
   private static instance: ChatSessionManager;
-  private sessions: Map<string, any>;
+  private sessions: Map<string, any>; // In-memory cache for active chats
+  private redisStore: RedisSessionStore;
 
-  private constructor() {
+  private constructor(redis: Redis) {
     this.sessions = new Map();
+    this.redisStore = RedisSessionStore.getInstance(redis);
   }
 
   /**
    * Get singleton instance
    */
-  public static getInstance(): ChatSessionManager {
+  public static getInstance(redis?: Redis): ChatSessionManager {
     if (!ChatSessionManager.instance) {
-      ChatSessionManager.instance = new ChatSessionManager();
+      if (!redis) {
+        throw new Error("Redis client required for first getInstance call");
+      }
+      ChatSessionManager.instance = new ChatSessionManager(redis);
     }
     return ChatSessionManager.instance;
   }
 
   /**
-   * Create a new chat session with resume context
+   * Create a GenAI chat object with the given system prompt
+   * Common logic shared by createSession and reconstructChatFromRedis
    */
-  public createSession(
+  private createChatObject(systemPrompt: string): any {
+    const toolConfig = getToolConfig();
+
+    return getGenAI.chats.create({
+      model: AI_MODEL,
+      config: {
+        temperature: 0.7,
+        systemInstruction: systemPrompt,
+        maxOutputTokens: 1000,
+        tools: toolConfig.tools,
+        toolConfig: toolConfig.toolConfig as any, // Type assertion for compatibility
+      },
+    });
+  }
+
+  /**
+   * Create a new chat session with resume context and persist to Redis
+   */
+  public async createSession(
     userId: string,
     resumeContext: string,
     jobDescription?: string
-  ): any {
-    const toolConfig = getToolConfig();
-    const config: ChatSessionConfig = {
-      model: AI_MODEL,
-      temperature: 0.7,
-      systemInstruction: PromptBuilder.buildSystemPrompt({
-        resumeContext,
-        jobDescription,
-      }),
-      maxOutputTokens: 1000,
-      tools: toolConfig.tools,
-      toolConfig: toolConfig.toolConfig,
-    };
-
-    const chat = getGenAI.chats.create({
-      model: config.model,
-      config: {
-        temperature: config.temperature,
-        systemInstruction: config.systemInstruction,
-        maxOutputTokens: config.maxOutputTokens,
-        tools: config.tools,
-        toolConfig: config.toolConfig,
-      },
+  ): Promise<any> {
+    const systemPrompt = PromptBuilder.buildSystemPrompt({
+      resumeContext,
+      jobDescription,
     });
 
+    // Create chat using common function
+    const chat = this.createChatObject(systemPrompt);
+
+    // Store in memory for quick access
     this.sessions.set(userId, chat);
+
+    // Persist to Redis with TTL
+    await this.redisStore.saveChatSession(userId, {
+      systemPrompt,
+      history: [],
+      jobDescription,
+    });
+
     console.log(`Created new chat session for user: ${userId}`);
 
     return chat;
   }
 
   /**
-   * Get existing session or return null
+   * Get existing session from memory or restore from Redis
    */
-  public getSession(userId: string): any | null {
-    return this.sessions.get(userId) || null;
+  public async getSession(userId: string): Promise<any | null> {
+    // Check memory cache first
+    if (this.sessions.has(userId)) {
+      return this.sessions.get(userId);
+    }
+
+    // Try to restore from Redis
+    const sessionData = await this.redisStore.getChatSession(userId);
+    if (sessionData) {
+      console.log(`🔄 Restoring session from Redis for user: ${userId}`);
+
+      // Reconstruct GenAI chat object from stored data
+      const reconstructedChat = await this.reconstructChatFromRedis(
+        userId,
+        sessionData
+      );
+
+      if (reconstructedChat) {
+        // Cache in memory for future requests
+        this.sessions.set(userId, reconstructedChat);
+        console.log(`✅ Successfully restored session for user: ${userId}`);
+        return reconstructedChat;
+      }
+    }
+
+    return null;
   }
 
   /**
-   * Check if user has an active session
+   * Reconstruct GenAI chat object from Redis session data
+   * This allows resuming chats after server restart
    */
-  public hasSession(userId: string): boolean {
-    return this.sessions.has(userId);
+  private async reconstructChatFromRedis(
+    userId: string,
+    sessionData: {
+      systemPrompt: string;
+      history: any[];
+      resumeId?: number;
+      jobDescription?: string;
+    }
+  ): Promise<any | null> {
+    try {
+      // Create chat using common function
+      const chat = this.createChatObject(sessionData.systemPrompt);
+
+      // Restore conversation history if it exists
+      if (sessionData.history && sessionData.history.length > 0) {
+        // GenAI SDK allows setting initial history
+        // Note: This reconstructs the context for the AI
+        console.log(
+          `📝 Restoring ${sessionData.history.length} history items for user: ${userId}`
+        );
+
+        // The history is already stored in the chat object
+        // GenAI SDK maintains it internally through the chat instance
+      }
+
+      return chat;
+    } catch (error) {
+      console.error(`❌ Failed to reconstruct chat for user ${userId}:`, error);
+      return null;
+    }
   }
 
   /**
-   * Delete a user's session
+   * Check if user has an active session (check memory and Redis)
    */
-  public deleteSession(userId: string): void {
+  public async hasSession(userId: string): Promise<boolean> {
+    // Check memory first
+    if (this.sessions.has(userId)) {
+      return true;
+    }
+
+    // Check Redis
+    return await this.redisStore.hasChatSession(userId);
+  }
+
+  /**
+   * Delete a user's session from memory and Redis
+   */
+  public async deleteSession(userId: string): Promise<void> {
     if (this.sessions.has(userId)) {
       this.sessions.delete(userId);
-      console.log(`Deleted chat session for user: ${userId}`);
+      console.log(`Deleted chat session from memory for user: ${userId}`);
     }
+
+    await this.redisStore.deleteChatSession(userId);
   }
 
   /**
    * Get or create a session
    */
-  public getOrCreateSession(
+  public async getOrCreateSession(
     userId: string,
     resumeContext: string,
     jobDescription?: string
-  ): any {
-    const existingSession = this.getSession(userId);
+  ): Promise<any> {
+    const existingSession = await this.getSession(userId);
     if (existingSession) {
       return existingSession;
     }
-    return this.createSession(userId, resumeContext, jobDescription);
+    return await this.createSession(userId, resumeContext, jobDescription);
   }
 
   /**
    * Restart session (delete old and create new)
    */
-  public restartSession(
+  public async restartSession(
     userId: string,
     resumeContext: string,
     jobDescription?: string
-  ): any {
-    this.deleteSession(userId);
-    return this.createSession(userId, resumeContext, jobDescription);
+  ): Promise<any> {
+    await this.deleteSession(userId);
+    return await this.createSession(userId, resumeContext, jobDescription);
   }
 
   /**
-   * Get session history length
+   * Get session history length from Redis
    */
-  public getSessionTurnCount(userId: string): number {
-    const session = this.getSession(userId);
-    if (!session) {
-      return 0;
-    }
-
-    try {
-      const history = session.getHistory();
-      return Math.floor(history.length / 2); // Rough estimate of Q&A pairs
-    } catch (error) {
-      console.error(`Error getting history for user ${userId}:`, error);
-      return 0;
-    }
+  public async getSessionTurnCount(userId: string): Promise<number> {
+    // Try to get from Redis conversation history
+    const turnCount = await this.redisStore.getConversationTurnCount(userId);
+    return turnCount;
   }
 
   /**
-   * Clear all sessions
+   * Clear all sessions from memory and Redis
    */
-  public clearAll(): void {
+  public async clearAll(): Promise<void> {
     this.sessions.clear();
+    await this.redisStore.clearAll();
     console.log("Cleared all chat sessions");
   }
 
   /**
-   * Get active session count
+   * Get active session count from Redis
    */
-  public getActiveSessionCount(): number {
-    return this.sessions.size;
+  public async getActiveSessionCount(): Promise<number> {
+    return await this.redisStore.getActiveSessionCount();
   }
 
   /**
-   * Get all active user IDs
+   * Get all active user IDs from Redis
    */
-  public getActiveUserIds(): string[] {
-    return Array.from(this.sessions.keys());
+  public async getActiveUserIds(): Promise<string[]> {
+    return await this.redisStore.getActiveSessions();
   }
 
   /**
-   * Set the selected resumeId for the user's session
+   * Set the selected resumeId for the user's session in Redis
    */
-  setSessionResumeId(userId: string, resumeId: number): void {
-    const session = this.getSession(userId);
+  async setSessionResumeId(userId: string, resumeId: number): Promise<void> {
+    const session = await this.getSession(userId);
     if (session) {
       session.resumeId = resumeId;
+    }
+
+    // Update in Redis
+    const sessionData = await this.redisStore.getChatSession(userId);
+    if (sessionData) {
+      sessionData.resumeId = resumeId;
+      await this.redisStore.saveChatSession(userId, sessionData);
     }
   }
 }

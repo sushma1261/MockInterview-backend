@@ -6,6 +6,7 @@ import multer from "multer";
 import newChat from "./routes/chat.route";
 import health from "./routes/health";
 import newResume from "./routes/newResume";
+import sessionsRoutes from "./routes/sessions.route";
 import userProfileRoutes from "./routes/userProfile.route";
 dotenv.config();
 
@@ -32,6 +33,9 @@ app.use("/api", newChat);
 
 // User Profile Routes (protected)
 app.use("/api/user", userProfileRoutes);
+
+// Session Management Routes (protected)
+app.use("/api/sessions", sessionsRoutes);
 
 // Health check route
 app.get("/", (req: Request, res: Response) => {

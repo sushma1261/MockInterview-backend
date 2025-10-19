@@ -1,39 +1,29 @@
-import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { getTextEmbeddingsAPI } from "../utils/chatUtils";
+import { Redis } from "ioredis";
+import { RedisSessionStore } from "./RedisSessionStore";
 
 /**
- * Manages conversation memory using vector stores for semantic search
+ * Manages conversation memory using Redis for persistence
+ * Replaces MemoryVectorStore with Redis-backed storage
  */
 export class ConversationStore {
   private static instance: ConversationStore;
-  private userStores: Map<string, MemoryVectorStore>;
+  private redisStore: RedisSessionStore;
 
-  private constructor() {
-    this.userStores = new Map();
+  private constructor(redis: Redis) {
+    this.redisStore = RedisSessionStore.getInstance(redis);
   }
 
   /**
    * Get singleton instance
    */
-  public static getInstance(): ConversationStore {
+  public static getInstance(redis?: Redis): ConversationStore {
     if (!ConversationStore.instance) {
-      ConversationStore.instance = new ConversationStore();
+      if (!redis) {
+        throw new Error("Redis client required for first getInstance call");
+      }
+      ConversationStore.instance = new ConversationStore(redis);
     }
     return ConversationStore.instance;
-  }
-
-  /**
-   * Get or create a vector store for a specific user
-   */
-  private getOrCreateStore(userId: string): MemoryVectorStore {
-    if (!this.userStores.has(userId)) {
-      this.userStores.set(
-        userId,
-        new MemoryVectorStore(getTextEmbeddingsAPI())
-      );
-      console.log(`Created new conversation store for user: ${userId}`);
-    }
-    return this.userStores.get(userId)!;
   }
 
   /**
@@ -44,26 +34,7 @@ export class ConversationStore {
     input: string,
     output: string
   ): Promise<void> {
-    const store = this.getOrCreateStore(userId);
-
-    await store.addDocuments([
-      {
-        pageContent: `Human: ${input}`,
-        metadata: {
-          role: "user",
-          timestamp: new Date().toISOString(),
-        },
-      },
-      {
-        pageContent: `AI: ${output}`,
-        metadata: {
-          role: "ai",
-          timestamp: new Date().toISOString(),
-        },
-      },
-    ]);
-
-    console.log(`Stored conversation turn for user: ${userId}`);
+    await this.redisStore.addConversationTurn(userId, input, output);
   }
 
   /**
@@ -74,87 +45,67 @@ export class ConversationStore {
     message: string,
     role: "user" | "ai"
   ): Promise<void> {
-    const store = this.getOrCreateStore(userId);
-    const prefix = role === "user" ? "Human:" : "AI:";
-
-    await store.addDocuments([
-      {
-        pageContent: `${prefix} ${message}`,
-        metadata: {
-          role,
-          timestamp: new Date().toISOString(),
-        },
-      },
-    ]);
-
-    console.log(`Stored ${role} message for user: ${userId}`);
+    await this.redisStore.addConversationMessage(userId, {
+      role,
+      content: message,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**
    * Fetch relevant conversation context based on a query
+   * Note: Redis stores chronologically, not with semantic search
+   * Returns recent conversation history
    */
   public async fetchContext(
     userId: string,
     query: string,
-    maxResults: number = 5
+    maxResults: number = 10
   ): Promise<string> {
-    const store = this.getOrCreateStore(userId);
+    // Get recent conversation history from Redis
+    const history = await this.redisStore.getConversationHistoryString(
+      userId,
+      maxResults
+    );
 
-    // Check if query is empty
-    if (!query || query.trim().length === 0) {
-      console.log(`Empty query provided for user: ${userId}`);
+    if (!history || history.trim().length === 0) {
+      console.log(`No conversation history for user: ${userId}`);
       return "";
     }
 
-    // Check if store has any documents by getting all documents directly
-    try {
-      const docs = await store.similaritySearch(query, maxResults);
+    console.log(
+      `Fetched conversation context for user: ${userId} (${maxResults} messages)`
+    );
 
-      if (docs.length === 0) {
-        console.log(`No conversation history for user: ${userId}`);
-        return "";
-      }
-
-      console.log(
-        `Fetched ${docs.length} conversation context docs for user: ${userId}`
-      );
-
-      return docs.map((d) => d.pageContent).join("\n");
-    } catch (error) {
-      console.log(`No conversation history available for user: ${userId}`);
-      return "";
-    }
+    return history;
   }
 
   /**
    * Get all conversation history for a user
    */
   public async getAllHistory(userId: string): Promise<string> {
-    return this.fetchContext(userId, "", 100);
+    return await this.redisStore.getConversationHistoryString(userId, 100);
   }
 
   /**
    * Clear conversation history for a specific user
    */
-  public clearUserHistory(userId: string): void {
-    if (this.userStores.has(userId)) {
-      this.userStores.delete(userId);
-      console.log(`Cleared conversation history for user: ${userId}`);
-    }
+  public async clearUserHistory(userId: string): Promise<void> {
+    await this.redisStore.clearConversationHistory(userId);
   }
 
   /**
    * Check if user has conversation history
    */
-  public hasHistory(userId: string): boolean {
-    return this.userStores.has(userId);
+  public async hasHistory(userId: string): Promise<boolean> {
+    const turnCount = await this.redisStore.getConversationTurnCount(userId);
+    return turnCount > 0;
   }
 
   /**
    * Clear all conversation stores (useful for testing or cleanup)
    */
-  public clearAll(): void {
-    this.userStores.clear();
-    console.log("Cleared all conversation stores");
+  public async clearAll(): Promise<void> {
+    await this.redisStore.clearAll();
   }
 }

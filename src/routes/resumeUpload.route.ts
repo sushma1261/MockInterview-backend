@@ -208,16 +208,6 @@ router.post(
         resume.id
       );
 
-      // Verify chunks were stored correctly
-      // const chunkCount = await resumeChunkService.getChunkCount(resume.id);
-      // console.log(`✅ Verified ${chunkCount} chunks stored in database`);
-
-      // // Get user's total chunk statistics
-      // const stats = await resumeChunkService.getUserChunkStats(userProfile.id);
-      // console.log(
-      //   `📊 User stats: ${stats.total_chunks} total chunks across ${stats.resumes_with_chunks} resumes`
-      // );
-
       res.status(201).json({
         message: "Resume uploaded and embedded successfully",
         resume: {
