@@ -1,0 +1,133 @@
+# Docker Compose configuration for production deployment with Oracle Vault integration
+# This setup fetches secrets from Oracle Cloud Vault instead of using .env files
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg18
+    container_name: mockinterview-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-system}
+      # Password will be fetched from Oracle Vault
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mockinterview}
+      POSTGRES_MAX_CONNECTIONS: 100
+      POSTGRES_SHARED_BUFFERS: 256MB
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-system} -d ${POSTGRES_DB:-mockinterview}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:8.0-alpine
+    container_name: mockinterview-redis
+    restart: always
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: mockinterview-backend
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Basic configuration
+      NODE_ENV: production
+      PORT: 8080
+      BASE_URL: http://localhost
+      
+      # Database connection
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-system}
+      POSTGRES_DB: ${POSTGRES_DB:-mockinterview}
+      
+      # Redis connection
+      REDIS_URL: redis://redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      # Oracle Vault configuration
+      USE_ORACLE_VAULT: ${USE_ORACLE_VAULT:-false}
+      OCI_USE_INSTANCE_PRINCIPAL: ${OCI_USE_INSTANCE_PRINCIPAL:-true}
+      OCI_REGION: ${OCI_REGION}
+      OCI_COMPARTMENT_ID: ${OCI_COMPARTMENT_ID}
+      OCI_VAULT_ID: ${OCI_VAULT_ID}
+      
+      # Secret OCIDs (fetched from vault at runtime)
+      SECRET_POSTGRES_PASSWORD_OCID: ${SECRET_POSTGRES_PASSWORD_OCID}
+      SECRET_GOOGLE_API_KEY_OCID: ${SECRET_GOOGLE_API_KEY_OCID}
+      SECRET_FIREBASE_PROJECT_ID_OCID: ${SECRET_FIREBASE_PROJECT_ID_OCID}
+      SECRET_FIREBASE_CLIENT_EMAIL_OCID: ${SECRET_FIREBASE_CLIENT_EMAIL_OCID}
+      SECRET_FIREBASE_PRIVATE_KEY_OCID: ${SECRET_FIREBASE_PRIVATE_KEY_OCID}
+      
+      # Auth configuration
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      # OCI config for instance principal authentication
+      # This is automatically available on OCI compute instances
+      - /etc/oci:/app/.oci:ro
+    networks:
+      - backend_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  backend_network:
+    driver: bridge
