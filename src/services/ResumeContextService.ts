@@ -1,8 +1,8 @@
 import { Redis } from "ioredis";
 import { Pool } from "pg";
-import { fetchResumeContextFromDB } from "../utils/chatUtils";
 import { ResumeService } from "./ResumeService";
 import { UserProfileService } from "./UserProfileService";
+import { VectorStoreService } from "./VectorStoreService";
 
 /**
  * Manages resume context caching and retrieval
@@ -17,6 +17,87 @@ export class ResumeContextService {
     this.cache = new Map();
     this.resumeService = new ResumeService(pool, redis);
     this.userProfileService = new UserProfileService(pool, redis);
+  }
+
+  /**
+   * Fetch resume context from vector store database
+   * Private method that handles the actual vector similarity search
+   */
+  private async fetchResumeContextFromDB(
+    userId: string,
+    resumeId: number | null
+  ): Promise<string[]> {
+    console.log(
+      `🔍 Fetching resume context from vector store for user: ${userId}, resume: ${
+        resumeId || "all"
+      }`
+    );
+
+    try {
+      // Use singleton vector store instance
+      const vectorStore = await VectorStoreService.getInstance();
+
+      // Build filter - metadata is JSONB in PostgreSQL
+      // The metadata column contains: { user_id: "string", resume_id: number, chunk_index: number, file_name: string }
+      // PGVectorStore uses JSONB containment operator (@>) for filtering
+      const filter: Record<string, any> = {
+        user_id: userId, // Must match the user
+      };
+
+      // If resumeId is specified, also filter by resume_id in metadata
+      // Store resume_id as NUMBER (not string) to match the stored metadata
+      if (resumeId !== null) {
+        filter.resume_id = resumeId; // Keep as number
+      }
+
+      console.log(`🔍 Applying filter:`, JSON.stringify(filter, null, 2));
+
+      // PGVectorStore.similaritySearch signature:
+      // similaritySearch(query: string, k?: number, filter?: Record<string, any>)
+      // The filter is passed as the third parameter directly
+      const docs = await vectorStore.similaritySearch(
+        "help me prepare for behavioral interview based on the resume uploaded.",
+        resumeId !== null ? 5 : 3, // k: number of results
+        filter // filter: applied to metadata JSONB column using @> operator
+      );
+
+      console.log(
+        `✅ Found ${docs.length} chunks for user ${userId}${
+          resumeId ? `, resume ${resumeId}` : ""
+        }`
+      );
+
+      // Debug: Log the metadata of returned docs to verify filtering
+      if (docs.length > 0) {
+        console.log(
+          `📄 Sample metadata from first chunk:`,
+          JSON.stringify(docs[0].metadata, null, 2)
+        );
+
+        // Verify all docs belong to the user (safety check)
+        const wrongUserDocs = docs.filter(
+          (doc) => doc.metadata.user_id !== userId
+        );
+        if (wrongUserDocs.length > 0) {
+          console.error(
+            `⚠️ WARNING: Found ${wrongUserDocs.length} chunks that don't belong to user ${userId}!`
+          );
+          // Filter out wrong user docs
+          const filteredDocs = docs.filter(
+            (doc) => doc.metadata.user_id === userId
+          );
+          console.log(
+            `🔒 Applied client-side filtering: ${filteredDocs.length}/${docs.length} chunks kept`
+          );
+          return filteredDocs.map((d) => d.pageContent);
+        }
+      }
+
+      return docs.map((d) => d.pageContent);
+    } catch (e) {
+      console.error("❌ Error fetching resume context from vector store:", e);
+      return [];
+    }
   }
 
   /**
@@ -59,11 +140,7 @@ export class ResumeContextService {
         resumeId || "all"
       }`
     );
-    const retrievedDocs = await fetchResumeContextFromDB(
-      userId,
-      resumeId,
-      new Map()
-    );
+    const retrievedDocs = await this.fetchResumeContextFromDB(userId, resumeId);
 
     // Cache the result
     this.setCache(cacheKey, retrievedDocs);

@@ -10,12 +10,9 @@ import { authenticate } from "../middleware/auth";
 import { ResumeChunkService } from "../services/ResumeChunkService";
 import { ResumeService } from "../services/ResumeService";
 import { UserProfileService } from "../services/UserProfileService";
+import { VectorStoreService } from "../services/VectorStoreService";
 
-import {
-  ensureUploadsDir,
-  getTextEmbeddingsAPI,
-  initializeVectorStore,
-} from "../utils/chatUtils";
+import { ensureUploadsDir } from "../utils/chatUtils";
 
 const router = Router();
 
@@ -35,11 +32,9 @@ async function embedResumeDocuments(
     `📦 Processing ${docsWithMetadata.length} chunks for resume ${resumeId}...`
   );
 
-  const embeddingsAPI = getTextEmbeddingsAPI();
-
-  // Initialize vector store with the embeddings API
-  console.log("🔧 Initializing PGVectorStore...");
-  const vectorStore = await initializeVectorStore(pool, embeddingsAPI);
+  // Use singleton vector store instance
+  console.log("🔧 Getting vector store instance...");
+  const vectorStore = await VectorStoreService.getInstance();
 
   // Process and embed each chunk
   // The vectorStore.addDocuments() will internally:

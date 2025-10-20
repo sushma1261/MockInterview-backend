@@ -6,13 +6,9 @@ import multer from "multer";
 import { uploadsDir } from "../constants";
 import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
+import { VectorStoreService } from "../services/VectorStoreService";
 
-import {
-  ensureUploadsDir,
-  getTextEmbeddingsAPI,
-  initializeVectorStore,
-  isAIDisabled,
-} from "../utils/chatUtils";
+import { ensureUploadsDir, isAIDisabled } from "../utils/chatUtils";
 
 const router = Router();
 
@@ -72,10 +68,7 @@ router.post(
         },
       }));
 
-      const vectorStore = await initializeVectorStore(
-        pool,
-        getTextEmbeddingsAPI()
-      );
+      const vectorStore = await VectorStoreService.getInstance();
       await vectorStore.addDocuments(docsWithUserId);
 
       await fs.unlink(req.file.path);

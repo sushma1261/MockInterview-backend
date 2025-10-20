@@ -1,10 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
-import { PGVectorStore } from "@langchain/community/vectorstores/pgvector";
 import { Embeddings } from "@langchain/core/embeddings";
 import fs from "fs/promises";
-import { Pool } from "pg";
 import { uploadsDir } from "../constants";
-import { getDBPool } from "../db/pool";
 import {
   AskNextQuestionResult,
   GenerateFeedbackResult,
@@ -133,74 +130,6 @@ export const getTextEmbeddingsAPI = () => {
   );
 };
 
-export const fetchResumeContextFromDB = async (
-  userId: string,
-  resumeId: number | null,
-  userContexts: Map<string, string[]>
-) => {
-  // Create a unique cache key based on userId and resumeId
-  const cacheKey = resumeId ? `${userId}:resume:${resumeId}` : userId;
-
-  if (!userContexts.has(cacheKey)) {
-    console.log(
-      `Fetching resume context for user: ${userId}, resume: ${
-        resumeId || "all"
-      }`
-    );
-    try {
-      const vectorStore = await initializeVectorStore(
-        getDBPool(),
-        getTextEmbeddingsAPI()
-      );
-
-      // Build filter based on whether resumeId is provided
-      const filter: any = { user_id: userId };
-      if (resumeId !== null) {
-        filter.resume_id = resumeId;
-      }
-
-      const docs = await vectorStore.similaritySearch(
-        "help me prepare for behavioral interview based on the resume uploaded.",
-        resumeId !== null ? 5 : 3, // Get more chunks if specific resume
-        { filter }
-      );
-
-      userContexts.set(
-        cacheKey,
-        docs.map((d) => d.pageContent)
-      );
-      console.log(
-        `Saved resume context (${
-          resumeId ? "resume " + resumeId : "all resumes"
-        }), chunks: ${docs.length}`
-      );
-    } catch (e) {
-      console.error("Error fetching resume context:", e);
-      userContexts.set(cacheKey, []);
-    }
-  }
-  console.log(`Using cached resume context for key: ${cacheKey}`);
-  return userContexts.get(cacheKey)!;
-};
-
-export const vectorStoreTableName = "resume_chunks";
-
-export const initializeVectorStore = async (
-  pool: Pool,
-  textEmbeddingsAPI: Embeddings
-) => {
-  console.log("Initializing PGVectorStore with table:", vectorStoreTableName);
-  return PGVectorStore.initialize(textEmbeddingsAPI, {
-    pool,
-    tableName: vectorStoreTableName,
-    columns: {
-      idColumnName: "id",
-      vectorColumnName: "embedding",
-      contentColumnName: "text",
-      metadataColumnName: "metadata",
-    },
-  });
-};
 export const isAIDisabled = () => {
   return process.env.AI_DISABLED === "true";
 };

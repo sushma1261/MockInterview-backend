@@ -15,9 +15,10 @@ const interviewController = new InterviewController(pool, redis);
 router.post("/chat", authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.uid;
+    const userProfileId = req.userProfile?.id;
 
-    if (!userId) {
-      return res.status(401).json({ error: "No user ID" });
+    if (!userId || !userProfileId) {
+      return res.status(401).json({ error: "No user ID or profile ID" });
     }
 
     const chatRequest: ChatRequest = req.body;
@@ -27,7 +28,11 @@ router.post("/chat", authenticate, async (req: Request, res: Response) => {
       } JobDesc: ${chatRequest.job_description || "no job description"}`
     );
 
-    const response = await interviewController.processChat(userId, chatRequest);
+    const response = await interviewController.processChat(
+      userId,
+      userProfileId,
+      chatRequest
+    );
     res.json(response);
   } catch (err) {
     console.error("Error in /chat:", err);
@@ -48,9 +53,10 @@ router.post(
   async (req: Request, res: Response) => {
     try {
       const userId = req.user?.uid;
+      const userProfileId = req.userProfile?.id;
 
-      if (!userId) {
-        return res.status(401).json({ error: "No user ID" });
+      if (!userId || !userProfileId) {
+        return res.status(401).json({ error: "No user ID or profile ID" });
       }
 
       const chatRequest: ChatRequest = req.body;
@@ -72,9 +78,10 @@ router.post(
       // Process chat with streaming callback
       const response = await interviewController.processChatStreaming(
         userId,
+        userProfileId,
         chatRequest,
         // Callback function - called for each chunk
-        async (chunk) => {
+        async (chunk: any) => {
           // Send chunk to frontend via SSE
           res.write(
             `data: ${JSON.stringify({
@@ -162,6 +169,45 @@ router.get(
     } catch (err) {
       console.error("Error getting chat status:", err);
       res.status(500).json({ error: "Failed to get status" });
+    }
+  }
+);
+
+/**
+ * Resume an in-progress session from PostgreSQL
+ * Restores conversation history to Redis if expired
+ * Use this to continue a session after Redis expires or on a new device
+ */
+router.post(
+  "/chat/resume/:sessionId",
+  authenticate,
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.uid;
+      const userProfileId = req.userProfile?.id;
+      const sessionId = parseInt(req.params.sessionId);
+
+      if (!userId || !userProfileId) {
+        return res.status(401).json({ error: "No user ID or profile ID" });
+      }
+
+      if (isNaN(sessionId)) {
+        return res.status(400).json({ error: "Invalid session ID" });
+      }
+
+      const result = await interviewController.resumeSession(
+        userId,
+        userProfileId,
+        sessionId
+      );
+
+      res.json(result);
+    } catch (err) {
+      console.error("Error resuming session:", err);
+      res.status(500).json({
+        error: "Failed to resume session",
+        details: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 );
