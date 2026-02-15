@@ -3,6 +3,7 @@ import redis from "../config/redis";
 import { InterviewController } from "../controllers/InterviewControllers";
 import pool from "../db/pool";
 import { authenticate } from "../middleware/auth";
+import { chatLimiter } from "../middleware/rateLimiter";
 import { ChatRequest } from "../types/interviewTypes";
 
 const router = Router();
@@ -12,7 +13,7 @@ const interviewController = new InterviewController(pool, redis);
  * Non-streaming chat endpoint (original behavior)
  * Waits for complete response before sending to frontend
  */
-router.post("/chat", authenticate, async (req: Request, res: Response) => {
+router.post("/chat", chatLimiter, authenticate, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.uid;
     const userProfileId = req.userProfile?.id;
@@ -49,6 +50,7 @@ router.post("/chat", authenticate, async (req: Request, res: Response) => {
  */
 router.post(
   "/chat/stream",
+  chatLimiter,
   authenticate,
   async (req: Request, res: Response) => {
     try {
@@ -180,6 +182,7 @@ router.get(
  */
 router.post(
   "/chat/resume/:sessionId",
+  chatLimiter,
   authenticate,
   async (req: Request, res: Response) => {
     try {

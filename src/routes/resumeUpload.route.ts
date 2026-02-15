@@ -3,25 +3,23 @@ import { CharacterTextSplitter } from "@langchain/textsplitters";
 import { Request, Response, Router } from "express";
 import { promises as fs } from "fs";
 import multer from "multer";
-import redisClient from "../config/redis";
 import { uploadsDir } from "../constants";
 import { getDBPool } from "../db/pool";
 import { authenticate } from "../middleware/auth";
 import { ResumeChunkService } from "../services/ResumeChunkService";
-import { ResumeService } from "../services/ResumeService";
-import { UserProfileService } from "../services/UserProfileService";
+import ServiceFactory from "../services/ServiceFactory";
 import { VectorStoreService } from "../services/VectorStoreService";
 
-import { ensureUploadsDir } from "../utils/chatUtils";
+import { ensureUploadsDir, isAIDisabled } from "../utils/chatUtils";
 
 const router = Router();
 
 // Postgres pool
 const pool = getDBPool();
 
-// Initialize services
-const userProfileService = new UserProfileService(pool, redisClient);
-const resumeService = new ResumeService(pool, redisClient);
+// Get singleton service instances
+const userProfileService = ServiceFactory.getUserProfileService();
+const resumeService = ServiceFactory.getResumeService();
 const resumeChunkService = new ResumeChunkService(pool);
 
 async function embedResumeDocuments(
@@ -103,13 +101,12 @@ router.post(
     console.log("Resume upload from user:", userId, req.file.originalname);
 
     try {
-      // Get or create user profile to get the internal user ID
-      const userProfile = await userProfileService.getOrCreateUserProfile(
-        userId,
-        req.user?.email || "",
-        req.user?.name,
-        req.user?.picture
-      );
+      // User profile already loaded by authenticate middleware
+      const userProfile = req.userProfile;
+
+      if (!userProfile) {
+        return res.status(401).json({ error: "User profile not found" });
+      }
 
       // Check if resume with same filename already exists
       const fileExists = await resumeService.resumeExistsByFileName(
@@ -196,15 +193,23 @@ router.post(
         },
       }));
 
-      // Process and embed documents into vector store
+      // Process and embed documents into vector store only if AI is enabled
       // This will create one embedding per chunk
-      const embeddedCount = await embedResumeDocuments(
-        docsWithMetadata,
-        resume.id
-      );
+      let embeddedCount = 0;
+      console.log("isAIDisabled()", isAIDisabled());
+      if (!isAIDisabled()) {
+        embeddedCount = await embedResumeDocuments(
+          docsWithMetadata,
+          resume.id
+        );
+      } else {
+        console.log("⚠️ AI disabled - skipping embedding generation");
+      }
 
       res.status(201).json({
-        message: "Resume uploaded and embedded successfully",
+        message: isAIDisabled() 
+          ? "Resume uploaded successfully (AI disabled - no embeddings)" 
+          : "Resume uploaded and embedded successfully",
         resume: {
           id: resume.id,
           title: resume.title,
@@ -252,13 +257,12 @@ router.get("/:id/chunks", authenticate, async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Invalid resume ID" });
     }
 
-    // Get user profile
-    const userProfile = await userProfileService.getOrCreateUserProfile(
-      userId,
-      req.user?.email || "",
-      req.user?.name,
-      req.user?.picture
-    );
+    // User profile already loaded by authenticate middleware
+    const userProfile = req.userProfile;
+
+    if (!userProfile) {
+      return res.status(401).json({ error: "User profile not found" });
+    }
 
     // Verify resume belongs to user
     const resume = await resumeService.getResumeById(resumeId, userProfile.id);
@@ -308,13 +312,12 @@ router.get(
         return res.status(400).json({ error: "Invalid resume ID" });
       }
 
-      // Get user profile
-      const userProfile = await userProfileService.getOrCreateUserProfile(
-        userId,
-        req.user?.email || "",
-        req.user?.name,
-        req.user?.picture
-      );
+      // User profile already loaded by authenticate middleware
+      const userProfile = req.userProfile;
+
+      if (!userProfile) {
+        return res.status(401).json({ error: "User profile not found" });
+      }
 
       // Verify resume belongs to user
       const resume = await resumeService.getResumeById(
@@ -356,13 +359,12 @@ router.get(
         return res.status(401).json({ error: "No user ID" });
       }
 
-      // Get user profile
-      const userProfile = await userProfileService.getOrCreateUserProfile(
-        userId,
-        req.user?.email || "",
-        req.user?.name,
-        req.user?.picture
-      );
+      // User profile already loaded by authenticate middleware
+      const userProfile = req.userProfile;
+
+      if (!userProfile) {
+        return res.status(401).json({ error: "User profile not found" });
+      }
 
       // Get chunk statistics
       const stats = await resumeChunkService.getUserChunkStats(userProfile.id);

@@ -9,7 +9,6 @@ import {
   getUserPreferences,
   getUserProfile,
   getUserResumes,
-  healthCheck,
   setPrimaryResume,
   updateResume,
   updateUserPreferences,
@@ -27,7 +26,6 @@ router.use(authenticate);
 router.get("/profile", getUserProfile);
 router.put("/profile", updateUserProfile);
 router.delete("/profile", deleteUserProfile);
-router.get("/health", healthCheck);
 
 // ==================== User Preferences Routes ====================
 router.get("/preferences", getUserPreferences);
@@ -38,8 +36,8 @@ router.put("/preferences", updateUserPreferences);
 router.use("/resumes", resumeUploadRoutes);
 
 // Resume CRUD routes
-router.post("/resumes", createResume);
 router.get("/resumes", getUserResumes);
+router.post("/resumes", createResume);
 router.get("/resumes/primary", getPrimaryResume);
 router.get("/resumes/:id", getResumeById);
 router.get("/resumes/:id/download", downloadResume);

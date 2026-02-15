@@ -28,18 +28,44 @@ const startInterviewFuncDeclaration: FunctionDeclaration = {
 };
 
 /**
- * Function declaration for asking next question
+ * Function declaration for asking next question with feedback on previous answer
  */
 const askNextQuesFuncDeclaration: FunctionDeclaration = {
   name: "ask_next_question",
   description:
-    "Ask the next follow-up interview question based on candidate's previous answers or can choose to ask a new question.",
+    "Provide feedback on the candidate's previous answer AND ask the next interview question. This combines evaluation and progression in one call.",
   parameters: {
     type: Type.OBJECT,
     properties: {
+      // Feedback for the previous answer
+      previous_answer_feedback: {
+        type: Type.OBJECT,
+        description: "Feedback for the answer just provided by the candidate",
+        properties: {
+          feedback_text: {
+            type: Type.STRING,
+            description: "Brief constructive feedback on the answer",
+          },
+          strengths: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Positive aspects of the answer (1-3 points)",
+          },
+          areas_for_improvement: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Areas that could be improved (1-3 points)",
+          },
+          score: {
+            type: Type.NUMBER,
+            description: "Score from 0-10 for the answer quality",
+          },
+        },
+      },
+      // Next question details
       question: {
         type: Type.STRING,
-        description: "The follow-up question",
+        description: "The next interview question",
       },
       question_number: {
         type: Type.NUMBER,
@@ -55,7 +81,12 @@ const askNextQuesFuncDeclaration: FunctionDeclaration = {
         description: "Why this follow-up question is being asked",
       },
     },
-    required: ["question", "question_number", "question_type"],
+    required: [
+      "previous_answer_feedback",
+      "question",
+      "question_number",
+      "question_type",
+    ],
   },
 };
 

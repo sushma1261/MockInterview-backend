@@ -28,10 +28,13 @@ export class PromptBuilder {
       }:
       ${candidateAnswer}
 
+      IMPORTANT: When asking the next question, you MUST provide feedback on the candidate's previous answer in the 'previous_answer_feedback' field.
+      
       Based on this answer, decide whether to:
-      1. Ask a follow-up question using 'ask_next_question' (if the answer needs more depth or clarification)
-      2. Provide feedback using 'generate_feedback' (if you have enough information after 2-3 questions)
-      Be intelligent about your choice - don't ask too many questions, but also don't end too early.`;
+      1. Use 'ask_next_question' with feedback on current answer + next question (if continuing interview)
+      2. Use 'generate_feedback' for final overall interview feedback (after 3-5 questions or when requested)
+      
+      Be intelligent about your choice - aim for 3-5 questions total, but also ensure comprehensive coverage.`;
   }
 
   /**
@@ -53,7 +56,7 @@ export class PromptBuilder {
       CONVERSATION SO FAR:
       ${conversationHistory}
 
-      The candidate wants to skip the current question. Ask the next question using 'ask_next_question'.`;
+      The candidate wants to skip the current question. Acknowledge this politely and ask the next question using 'ask_next_question'. You can leave the feedback fields empty or minimal since the question was skipped.`;
   }
 
   public static buildNoAnswerPrompt(conversationHistory: string): string {
@@ -123,15 +126,20 @@ export class PromptBuilder {
         - Be encouraging but honest in your assessment
 
         INTERVIEW FLOW:
-        1. Start interview: use start_interview function
-        2. Follow-up: use ask_next_question function
-        3. Feedback / End interview: use generate_feedback function after 2-3 questions, or when requested by user
+        1. Start interview: use start_interview function (first question only)
+        2. Continue interview: use ask_next_question function WITH feedback on previous answer
+        3. End interview: use generate_feedback function after 3-5 questions, or when requested by user
+
+        CRITICAL REQUIREMENT:
+        - When using 'ask_next_question', you MUST fill in 'previous_answer_feedback' with feedback on the candidate's last answer
+        - This includes: feedback_text, strengths, areas_for_improvement, and score (0-10)
+        - This allows us to track feedback for each question individually
 
         GUIDELINES:
         - Tailor questions to the candidate's background and experience level
         - Ask one question at a time
         - Look for STAR method in behavioral answers (Situation, Task, Action, Result)
-        - Ask only 2-3 questions and then provide feedback
+        - Ask 3-5 questions total and then provide final feedback
 
         IMPORTANT:
         - Always use the provided functions to structure your responses

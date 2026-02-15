@@ -326,6 +326,111 @@ export class UserProfileService {
     return preferences;
   }
 
+  /**
+   * Get all users with their roles (Admin only)
+   */
+  async getAllUsersWithRoles(
+    searchQuery?: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ users: any[]; total: number }> {
+    // First, get total count for pagination
+    let countQuery = `
+      SELECT COUNT(DISTINCT up.id) as total
+      FROM user_profiles up
+      LEFT JOIN user_roles ur ON up.id = ur.user_id
+    `;
+
+    const countValues: any[] = [];
+
+    // Add search filter to count query if provided
+    if (searchQuery && searchQuery.trim()) {
+      countQuery += `
+        WHERE 
+          up.email ILIKE $1 
+          OR up.display_name ILIKE $1
+          OR up.firebase_uid ILIKE $1
+      `;
+      countValues.push(`%${searchQuery.trim()}%`);
+    }
+
+    const countResult = await this.pool.query(countQuery, countValues);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Now get the actual data with pagination
+    let query = `
+      SELECT 
+        up.id,
+        up.firebase_uid,
+        up.email,
+        up.display_name,
+        up.photo_url,
+        up.created_at,
+        array_agg(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL) as roles,
+        array_agg(DISTINCT ur.department) FILTER (WHERE ur.department IS NOT NULL) as departments
+      FROM user_profiles up
+      LEFT JOIN user_roles ur ON up.id = ur.user_id
+    `;
+
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    // Add search filter if provided
+    if (searchQuery && searchQuery.trim()) {
+      query += `
+        WHERE 
+          up.email ILIKE $${paramIndex}
+          OR up.display_name ILIKE $${paramIndex}
+          OR up.firebase_uid ILIKE $${paramIndex}
+      `;
+      values.push(`%${searchQuery.trim()}%`);
+      paramIndex++;
+    }
+
+    query += `
+      GROUP BY up.id
+      ORDER BY up.created_at DESC
+    `;
+
+    // Add pagination
+    if (limit !== undefined && limit > 0) {
+      query += ` LIMIT $${paramIndex}`;
+      values.push(limit);
+      paramIndex++;
+    }
+
+    if (offset !== undefined && offset >= 0) {
+      query += ` OFFSET $${paramIndex}`;
+      values.push(offset);
+    }
+
+    const result = await this.pool.query(query, values);
+
+    const users = result.rows.map((row) => ({
+      id: row.id,
+      firebase_uid: row.firebase_uid,
+      email: row.email,
+      display_name: row.display_name,
+      photo_url: row.photo_url,
+      roles: row.roles || [],
+      departments: row.departments || [],
+      created_at: row.created_at,
+    }));
+
+    return { users, total };
+  }
+
+  /**
+   * Search users by email, name, or ID
+   */
+  async searchUsers(
+    searchQuery: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ users: any[]; total: number }> {
+    return this.getAllUsersWithRoles(searchQuery, limit, offset);
+  }
+
   // ==================== Cache Helper Methods ====================
 
   private async getCachedUserProfile(

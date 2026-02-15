@@ -175,81 +175,81 @@ router.get(
   }
 );
 
-/**
- * Get all job descriptions for the user
- * Useful for dropdown/selection UI
- */
-router.get(
-  "/job-descriptions/all",
-  authenticate,
-  async (req: Request, res: Response) => {
-    try {
-      const userProfileId = req.userProfile?.id;
+// /**
+//  * Get all job descriptions for the user
+//  * Useful for dropdown/selection UI
+//  */
+// router.get(
+//   "/job-descriptions/all",
+//   authenticate,
+//   async (req: Request, res: Response) => {
+//     try {
+//       const userProfileId = req.userProfile?.id;
 
-      if (!userProfileId) {
-        return res.status(401).json({ error: "No user profile ID" });
-      }
+//       if (!userProfileId) {
+//         return res.status(401).json({ error: "No user profile ID" });
+//       }
 
-      const jobDescriptions = await sessionService.getUserJobDescriptions(
-        userProfileId
-      );
+//       const jobDescriptions = await sessionService.getUserJobDescriptions(
+//         userProfileId
+//       );
 
-      res.json({
-        success: true,
-        count: jobDescriptions.length,
-        jobDescriptions,
-      });
-    } catch (err) {
-      console.error("Error fetching job descriptions:", err);
-      res.status(500).json({
-        error: "Failed to fetch job descriptions",
-        details: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-);
+//       res.json({
+//         success: true,
+//         count: jobDescriptions.length,
+//         jobDescriptions,
+//       });
+//     } catch (err) {
+//       console.error("Error fetching job descriptions:", err);
+//       res.status(500).json({
+//         error: "Failed to fetch job descriptions",
+//         details: err instanceof Error ? err.message : String(err),
+//       });
+//     }
+//   }
+// );
 
-/**
- * Manually create or save a job description
- * For future extensibility (Option C from requirements)
- */
-router.post(
-  "/job-descriptions",
-  authenticate,
-  async (req: Request, res: Response) => {
-    try {
-      const userProfileId = req.userProfile?.id;
+// /**
+//  * Manually create or save a job description
+//  * For future extensibility (Option C from requirements)
+//  */
+// router.post(
+//   "/job-descriptions",
+//   authenticate,
+//   async (req: Request, res: Response) => {
+//     try {
+//       const userProfileId = req.userProfile?.id;
 
-      if (!userProfileId) {
-        return res.status(401).json({ error: "No user profile ID" });
-      }
+//       if (!userProfileId) {
+//         return res.status(401).json({ error: "No user profile ID" });
+//       }
 
-      const { description, title, company_name } = req.body;
+//       const { description, title, company_name } = req.body;
 
-      if (!description) {
-        return res.status(400).json({ error: "Job description is required" });
-      }
+//       if (!description) {
+//         return res.status(400).json({ error: "Job description is required" });
+//       }
 
-      const jobDescId = await sessionService.saveJobDescription(
-        userProfileId,
-        description,
-        title,
-        company_name
-      );
+//       const jobDescId = await sessionService.saveJobDescription(
+//         userProfileId,
+//         description,
+//         title,
+//         company_name
+//       );
 
-      res.json({
-        success: true,
-        message: "Job description saved successfully",
-        jobDescriptionId: jobDescId,
-      });
-    } catch (err) {
-      console.error("Error saving job description:", err);
-      res.status(500).json({
-        error: "Failed to save job description",
-        details: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-);
+//       res.json({
+//         success: true,
+//         message: "Job description saved successfully",
+//         jobDescriptionId: jobDescId,
+//       });
+//     } catch (err) {
+//       console.error("Error saving job description:", err);
+//       res.status(500).json({
+//         error: "Failed to save job description",
+//         details: err instanceof Error ? err.message : String(err),
+//       });
+//     }
+//   }
+// );
 
 export default router;

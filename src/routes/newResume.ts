@@ -68,13 +68,19 @@ router.post(
         },
       }));
 
-      const vectorStore = await VectorStoreService.getInstance();
-      await vectorStore.addDocuments(docsWithUserId);
+      if (!isAIDisabled()) {
+        const vectorStore = await VectorStoreService.getInstance();
+        await vectorStore.addDocuments(docsWithUserId);
+      } else {
+        console.log("⚠️ AI disabled - skipping embedding generation");
+      }
 
       await fs.unlink(req.file.path);
 
       res.json({
-        message: "Resume uploaded & embedded successfully",
+        message: isAIDisabled() 
+          ? "Resume uploaded successfully (AI disabled - no embeddings)" 
+          : "Resume uploaded & embedded successfully",
         chunks: docs.length,
       });
     } catch (err) {

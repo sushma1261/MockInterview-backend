@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import redis from "../config/redis";
-import { authenticate } from "../middleware/auth";
+import { authenticate, requireAdmin } from "../middleware/auth";
 import { RedisSessionStore } from "../services/RedisSessionStore";
 import { SessionCleanupScheduler } from "../services/SessionCleanupScheduler";
 
@@ -64,20 +64,24 @@ router.get("/me", authenticate, async (req: Request, res: Response) => {
  * Force cleanup stale sessions (admin only)
  * POST /api/sessions/cleanup
  */
-router.post("/cleanup", authenticate, async (req: Request, res: Response) => {
-  try {
-    // TODO: Add admin check
-    const cleaned = await cleanupScheduler.forceCleanup();
+router.post(
+  "/cleanup",
+  authenticate,
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      const cleaned = await cleanupScheduler.forceCleanup();
 
-    res.json({
-      message: "Cleanup completed",
-      sessionsRemoved: cleaned,
-    });
-  } catch (err) {
-    console.error("Error forcing cleanup:", err);
-    res.status(500).json({ error: "Failed to force cleanup" });
+      res.json({
+        message: "Cleanup completed",
+        sessionsRemoved: cleaned,
+      });
+    } catch (err) {
+      console.error("Error forcing cleanup:", err);
+      res.status(500).json({ error: "Failed to force cleanup" });
+    }
   }
-});
+);
 
 /**
  * Clear current user's session

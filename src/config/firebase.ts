@@ -22,22 +22,3 @@ export const verifyToken = async (token: string) => {
     return null;
   }
 };
-
-// import * as admin from "firebase-admin";
-
-// if (!admin.apps.length) {
-//   admin.initializeApp({
-//     credential: admin.credential.applicationDefault(),
-//   });
-// }
-
-// export const verifyToken = async (token: string) => {
-//   try {
-//     console.log("Verifying token:", token);
-//     const decodedToken = await admin.auth().verifyIdToken(token);
-//     return decodedToken;
-//   } catch (error) {
-//     console.error("Error verifying Firebase ID token:", error);
-//     return null;
-//   }
-// };

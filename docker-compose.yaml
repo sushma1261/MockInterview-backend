@@ -2,12 +2,14 @@ services:
   postgres:
     image: pgvector/pgvector:0.8.1-pg18
     restart: always
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_USER: system
       POSTGRES_PASSWORD: password
       POSTGRES_DB: mockinterview
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/mockinterview_data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U system -d mockinterview"]
       interval: 10s

@@ -4,7 +4,7 @@ import { PromptBuilder } from "../config/PromptBuilder";
 import { ChatSessionManager } from "../services/ChatSessionManager";
 import { ConversationStore } from "../services/ConversationStore";
 import { InterviewSessionService } from "../services/InterviewSessionService";
-import { JobDescriptionService } from "../services/JobDescriptionService";
+import { RedisSessionStore } from "../services/RedisSessionStore";
 import { ResumeContextService } from "../services/ResumeContextService";
 import {
   StreamChunkCallback,
@@ -26,13 +26,15 @@ export class InterviewController {
   private resumeContextService: ResumeContextService;
   private chatSessionManager: ChatSessionManager;
   private streamProcessor: StreamProcessor;
-  private jobDescriptionService: JobDescriptionService;
+  // private jobDescriptionService: JobDescriptionService;
+  private redisStore: RedisSessionStore;
   private sessionService: InterviewSessionService;
 
   constructor(pool: Pool, redis: Redis) {
     this.conversationStore = ConversationStore.getInstance(redis);
-    this.resumeContextService = ResumeContextService.getInstance(pool, redis);
-    this.jobDescriptionService = JobDescriptionService.getInstance();
+    this.resumeContextService = ResumeContextService.getInstance();
+    // this.jobDescriptionService = JobDescriptionService.getInstance();
+    this.redisStore = RedisSessionStore.getInstance(redis);
     this.chatSessionManager = ChatSessionManager.getInstance(redis);
     this.streamProcessor = new StreamProcessor();
     this.sessionService = InterviewSessionService.getInstance(pool);
@@ -49,7 +51,7 @@ export class InterviewController {
       resume_id?: number;
       job_title?: string;
       company_name?: string;
-    }
+    },
   ): Promise<ChatResponse> {
     const {
       message,
@@ -64,12 +66,12 @@ export class InterviewController {
     console.log(
       `📞 === [NON-STREAMING] processChat START === User: ${userId}, Action: ${
         action || "continue"
-      }`
+      }`,
     );
 
     if (job_description) {
       console.log(`Setting job description for user: ${userId}`);
-      this.jobDescriptionService.setJobDescription(userId, job_description);
+      await this.redisStore.saveJobDescription(userId, job_description);
     } else {
       console.log(`No job description provided for user: ${userId}`);
     }
@@ -80,20 +82,18 @@ export class InterviewController {
       actualResumeId = resume_id;
     } else {
       // Try to get from active session first
-      const activeSession = await this.sessionService.getActiveSession(
-        userProfileId
-      );
+      const activeSession =
+        await this.sessionService.getActiveSession(userProfileId);
       if (activeSession) {
         actualResumeId = activeSession.resume_id;
         console.log(`📋 Using resume_id ${actualResumeId} from active session`);
       } else {
         // Fall back to primary resume
-        const primaryId = await this.resumeContextService.getPrimaryResumeId(
-          userId
-        );
+        const primaryId =
+          await this.resumeContextService.getPrimaryResumeId(userId);
         if (!primaryId) {
           throw new Error(
-            "No resume found for user. Please upload a resume first."
+            "No resume found for user. Please upload a resume first.",
           );
         }
         actualResumeId = primaryId;
@@ -112,7 +112,7 @@ export class InterviewController {
       action,
       job_description,
       job_title,
-      company_name
+      company_name,
     );
 
     console.log(`📊 Using PostgreSQL session ${pgSessionId} for tracking`);
@@ -121,14 +121,14 @@ export class InterviewController {
     const conversationHistory = await this.conversationStore.fetchContext(
       userId,
       "interview",
-      10
+      10,
     );
 
     const prompt = PromptBuilder.buildPrompt(
       action || InterviewAction.CONTINUE,
       conversationHistory,
       message || "",
-      question_number
+      question_number,
     );
 
     // Store user message if provided
@@ -165,7 +165,7 @@ export class InterviewController {
             "1. Network connectivity issues\n" +
             "2. Invalid API key\n" +
             "3. API service unavailable\n" +
-            `Original error: ${error.message}`
+            `Original error: ${error.message}`,
         );
       }
       throw error;
@@ -173,7 +173,7 @@ export class InterviewController {
 
     const streamResult = await this.streamProcessor.processStream(
       stream,
-      userId
+      userId,
     );
 
     // Validate result
@@ -183,15 +183,16 @@ export class InterviewController {
     }
 
     // Store assistant response to conversation history
+    const funcResult = streamResult.functionCallResult;
+
     if (streamResult.fullText) {
       await this.conversationStore.storeMessage(
         userId,
         streamResult.fullText,
-        "ai"
+        "ai",
       );
 
       // Save to PostgreSQL
-      const funcResult = streamResult.functionCallResult;
       await this.sessionService.saveMessage(
         pgSessionId,
         "assistant",
@@ -208,20 +209,19 @@ export class InterviewController {
               : undefined,
           functionName: funcResult?.type,
           functionResult: funcResult || undefined,
-        }
+        },
       );
-    } else if (streamResult.functionCallResult) {
+    } else if (funcResult) {
       // No text but we have a function call result - save it!
-      const funcResult = streamResult.functionCallResult;
       const contentToSave: string =
         "question" in funcResult
           ? (funcResult.question as string)
           : "reasoning" in funcResult
-          ? (funcResult.reasoning as string)
-          : JSON.stringify(funcResult);
+            ? (funcResult.reasoning as string)
+            : JSON.stringify(funcResult);
 
       console.log(
-        `💾 [NON-STREAMING] Saving function-only response: ${funcResult.type}`
+        `💾 [NON-STREAMING] Saving function-only response: ${funcResult.type}`,
       );
 
       await this.conversationStore.storeMessage(userId, contentToSave, "ai");
@@ -242,19 +242,59 @@ export class InterviewController {
               : undefined,
           functionName: funcResult.type,
           functionResult: funcResult,
-        }
+        },
       );
     } else {
       console.warn(
-        `⚠️ [NON-STREAMING] No fullText OR functionResult for action ${action}, skipping message save`
+        `⚠️ [NON-STREAMING] No fullText OR functionResult for action ${action}, skipping message save`,
       );
+    }
+
+    // Save per-question feedback if provided in ask_next_question
+    if (
+      funcResult?.type === "ask_next_question" &&
+      funcResult.previous_answer_feedback &&
+      funcResult.question_number
+    ) {
+      const feedback = funcResult.previous_answer_feedback;
+      const previousQuestionNumber = funcResult.question_number - 1;
+
+      if (previousQuestionNumber > 0) {
+        // Get the last two messages from the database (previous question and answer)
+        const messages = await this.sessionService.getRecentMessages(
+          pgSessionId,
+          2,
+        );
+
+        if (messages.length >= 2) {
+          const previousAnswer = messages[0]; // Most recent (user's answer)
+          const previousQuestion = messages[1]; // Second most recent (AI's question)
+
+          console.log(
+            `💾 Saving feedback for question ${previousQuestionNumber}`,
+          );
+          await this.sessionService.saveFeedback(
+            pgSessionId,
+            previousQuestionNumber,
+            previousQuestion.content,
+            previousAnswer.content,
+            {
+              feedbackText: feedback.feedback_text,
+              strengths: feedback.strengths,
+              areasForImprovement: feedback.areas_for_improvement,
+              score: feedback.score,
+              questionType: previousQuestion.question_type,
+            },
+          );
+        }
+      }
     }
 
     // Build and return response
     const response = await this.buildResponse(
       streamResult,
       action || InterviewAction.CONTINUE,
-      userId
+      userId,
     );
 
     // Cleanup if interview is complete
@@ -265,7 +305,7 @@ export class InterviewController {
       // Complete PostgreSQL session
       await this.sessionService.completeSession(
         pgSessionId,
-        streamResult.functionCallResult
+        streamResult.functionCallResult,
       );
 
       // Delete Redis session
@@ -287,7 +327,7 @@ export class InterviewController {
       job_title?: string;
       company_name?: string;
     },
-    onChunk: StreamChunkCallback
+    onChunk: StreamChunkCallback,
   ): Promise<ChatResponse> {
     const {
       message,
@@ -302,11 +342,11 @@ export class InterviewController {
     console.log(
       `📞 === [STREAMING] processChatStreaming START === User: ${userId}, Action: ${
         action || "continue"
-      }`
+      }`,
     );
 
     if (job_description) {
-      this.jobDescriptionService.setJobDescription(userId, job_description);
+      await this.redisStore.saveJobDescription(userId, job_description);
     }
 
     // Get actual resume_id (from request, active session, or primary)
@@ -315,22 +355,20 @@ export class InterviewController {
       actualResumeId = resume_id;
     } else {
       // Try to get from active session first
-      const activeSession = await this.sessionService.getActiveSession(
-        userProfileId
-      );
+      const activeSession =
+        await this.sessionService.getActiveSession(userProfileId);
       if (activeSession) {
         actualResumeId = activeSession.resume_id;
         console.log(
-          `📋 Using resume_id ${actualResumeId} from active session (streaming)`
+          `📋 Using resume_id ${actualResumeId} from active session (streaming)`,
         );
       } else {
         // Fall back to primary resume
-        const primaryId = await this.resumeContextService.getPrimaryResumeId(
-          userId
-        );
+        const primaryId =
+          await this.resumeContextService.getPrimaryResumeId(userId);
         if (!primaryId) {
           throw new Error(
-            "No resume found for user. Please upload a resume first."
+            "No resume found for user. Please upload a resume first.",
           );
         }
         actualResumeId = primaryId;
@@ -349,25 +387,25 @@ export class InterviewController {
       action,
       job_description,
       job_title,
-      company_name
+      company_name,
     );
 
     console.log(
-      `📊 Using PostgreSQL session ${pgSessionId} for tracking (streaming)`
+      `📊 Using PostgreSQL session ${pgSessionId} for tracking (streaming)`,
     );
 
     // Build prompt
     const conversationHistory = await this.conversationStore.fetchContext(
       userId,
       "interview",
-      10
+      10,
     );
 
     const prompt = PromptBuilder.buildPrompt(
       action || InterviewAction.CONTINUE,
       conversationHistory,
       message || "",
-      question_number
+      question_number,
     );
 
     // Store user message if provided
@@ -404,7 +442,7 @@ export class InterviewController {
             "1. Network connectivity issues\n" +
             "2. Invalid API key\n" +
             "3. API service unavailable\n" +
-            `Original error: ${error.message}`
+            `Original error: ${error.message}`,
         );
       }
       throw error;
@@ -413,7 +451,7 @@ export class InterviewController {
     const streamResult = await this.streamProcessor.processStreamWithCallback(
       stream,
       userId,
-      onChunk // ← Pass callback to stream chunks to frontend
+      onChunk, // ← Pass callback to stream chunks to frontend
     );
 
     // Validate result
@@ -427,7 +465,7 @@ export class InterviewController {
       await this.conversationStore.storeMessage(
         userId,
         streamResult.fullText,
-        "ai"
+        "ai",
       );
 
       // Save to PostgreSQL
@@ -448,7 +486,7 @@ export class InterviewController {
               : undefined,
           functionName: funcResult?.type,
           functionResult: funcResult || undefined,
-        }
+        },
       );
     } else if (streamResult.functionCallResult) {
       // No text but we have a function call result - save it!
@@ -457,11 +495,11 @@ export class InterviewController {
         "question" in funcResult
           ? (funcResult.question as string)
           : "reasoning" in funcResult
-          ? (funcResult.reasoning as string)
-          : JSON.stringify(funcResult);
+            ? (funcResult.reasoning as string)
+            : JSON.stringify(funcResult);
 
       console.log(
-        `💾 [STREAMING] Saving function-only response: ${funcResult.type}`
+        `💾 [STREAMING] Saving function-only response: ${funcResult.type}`,
       );
 
       await this.conversationStore.storeMessage(userId, contentToSave, "ai");
@@ -482,11 +520,11 @@ export class InterviewController {
               : undefined,
           functionName: funcResult.type,
           functionResult: funcResult,
-        }
+        },
       );
     } else {
       console.warn(
-        `⚠️ [STREAMING] No fullText OR functionResult for action ${action}, skipping message save`
+        `⚠️ [STREAMING] No fullText OR functionResult for action ${action}, skipping message save`,
       );
     }
 
@@ -494,7 +532,7 @@ export class InterviewController {
     const response = await this.buildResponse(
       streamResult,
       action || InterviewAction.CONTINUE,
-      userId
+      userId,
     );
 
     // Cleanup if interview is complete
@@ -505,7 +543,7 @@ export class InterviewController {
       // Complete PostgreSQL session
       await this.sessionService.completeSession(
         pgSessionId,
-        streamResult.functionCallResult
+        streamResult.functionCallResult,
       );
 
       // Delete Redis session
@@ -522,7 +560,7 @@ export class InterviewController {
   private async handleSession(
     userId: string,
     action?: InterviewAction | string,
-    resume_id?: number
+    resume_id?: number,
   ): Promise<any> {
     const shouldCreateNew =
       !this.chatSessionManager.hasSession(userId) ||
@@ -540,34 +578,33 @@ export class InterviewController {
     // Get resume context (by resumeId or primary)
     let resumeContext: string;
     console.log(
-      `Fetching resume context for user: ${userId}, resumeId: ${resume_id}`
+      `Fetching resume context for user: ${userId}, resumeId: ${resume_id}`,
     );
     if (resume_id) {
       console.log(`Fetching context for specified resumeId: ${resume_id}`);
       // Fetch by resumeId
       resumeContext = await this.resumeContextService.fetchResumeContextById(
         userId,
-        resume_id
+        resume_id,
       );
       // Store selected resumeId in session
       this.chatSessionManager.setSessionResumeId(userId, resume_id);
     } else {
       console.log(`Fetching context for primary resume`);
       // Fetch primary resume
-      resumeContext = await this.resumeContextService.fetchPrimaryResumeContext(
-        userId
-      );
+      resumeContext =
+        await this.resumeContextService.fetchPrimaryResumeContext(userId);
       // Store primary resumeId in session (if found)
-      const primaryId = await this.resumeContextService.getPrimaryResumeId(
-        userId
-      );
+      const primaryId =
+        await this.resumeContextService.getPrimaryResumeId(userId);
       if (primaryId) {
         this.chatSessionManager.setSessionResumeId(userId, primaryId);
       }
     }
-    const jobDescription = this.jobDescriptionService.getJobDescription(userId);
+    const jobDescriptionRaw = await this.redisStore.getJobDescription(userId);
+    const jobDescription = jobDescriptionRaw ?? undefined;
     console.log(
-      `Job description for user ${userId}: ${jobDescription || "none"}`
+      `Job description for user ${userId}: ${jobDescription || "none"}`,
     );
 
     // Create or restart session
@@ -576,14 +613,14 @@ export class InterviewController {
       return this.chatSessionManager.restartSession(
         userId,
         resumeContext,
-        jobDescription
+        jobDescription,
       );
     }
 
     return this.chatSessionManager.createSession(
       userId,
       resumeContext,
-      jobDescription
+      jobDescription,
     );
   }
 
@@ -600,7 +637,7 @@ export class InterviewController {
   private async buildResponse(
     streamResult: StreamProcessingResult,
     action: string,
-    userId: string
+    userId: string,
   ): Promise<ChatResponse> {
     const { fullText, functionCallResult } = streamResult;
 
@@ -643,7 +680,7 @@ export class InterviewController {
     this.chatSessionManager.deleteSession(userId);
     this.conversationStore.clearUserHistory(userId);
     this.resumeContextService.clearUserCache(userId);
-    this.jobDescriptionService.clearJobDescription(userId);
+    await this.redisStore.clearJobDescription(userId);
   }
 
   /**
@@ -653,7 +690,7 @@ export class InterviewController {
   async resumeSession(
     userId: string,
     userProfileId: number,
-    sessionId: number
+    sessionId: number,
   ): Promise<{
     success: boolean;
     message: string;
@@ -661,7 +698,7 @@ export class InterviewController {
     messageCount: number;
   }> {
     console.log(
-      `🔄 Resuming session ${sessionId} for user ${userId} (profile: ${userProfileId})`
+      `🔄 Resuming session ${sessionId} for user ${userId} (profile: ${userProfileId})`,
     );
 
     // 1. Get session details from PostgreSQL
@@ -679,7 +716,7 @@ export class InterviewController {
     // 3. Verify session is in_progress
     if (session.session_status !== "in_progress") {
       throw new Error(
-        `Cannot resume session with status: ${session.session_status}. Only in_progress sessions can be resumed.`
+        `Cannot resume session with status: ${session.session_status}. Only in_progress sessions can be resumed.`,
       );
     }
 
@@ -699,20 +736,17 @@ export class InterviewController {
 
     // 7. Set job description if exists
     if (session.job_description) {
-      this.jobDescriptionService.setJobDescription(
-        userId,
-        session.job_description
-      );
+      await this.redisStore.saveJobDescription(userId, session.job_description);
       console.log(`💼 Restored job description for session ${sessionId}`);
     }
 
     // 8. Cache resume context
     await this.resumeContextService.fetchResumeContext(
       userId,
-      session.resume_id
+      session.resume_id,
     );
     console.log(
-      `📋 Cached resume ${session.resume_id} for session ${sessionId}`
+      `📋 Cached resume ${session.resume_id} for session ${sessionId}`,
     );
 
     // 9. Create Redis chat session (GenAI chat object will be created on next message)
@@ -747,8 +781,7 @@ export class InterviewController {
       has_active_session: await this.chatSessionManager.hasSession(userId),
       turn_count: await this.chatSessionManager.getSessionTurnCount(userId),
       has_history: await this.conversationStore.hasHistory(userId),
-      has_job_description:
-        !!this.jobDescriptionService.getJobDescription(userId),
+      has_job_description: !!(await this.redisStore.getJobDescription(userId)),
     };
   }
 
@@ -759,7 +792,7 @@ export class InterviewController {
     await this.chatSessionManager.clearAll();
     await this.conversationStore.clearAll();
     await this.resumeContextService.clearAll();
-    this.jobDescriptionService.clearAll();
+    await this.redisStore.clearAll();
   }
 
   /**
@@ -772,19 +805,18 @@ export class InterviewController {
     action?: string,
     jobDescription?: string,
     jobTitle?: string,
-    companyName?: string
+    companyName?: string,
   ): Promise<number> {
     // If action is START, close any existing in-progress session
     if (
       action === InterviewAction.START ||
       action === InterviewAction.RESTART
     ) {
-      const activeSession = await this.sessionService.getActiveSession(
-        userProfileId
-      );
+      const activeSession =
+        await this.sessionService.getActiveSession(userProfileId);
       if (activeSession) {
         console.log(
-          `🔚 Completing existing session ${activeSession.id} before starting new one`
+          `🔚 Completing existing session ${activeSession.id} before starting new one`,
         );
         // Mark it as abandoned (user started a new session without completing)
         await this.sessionService.updateSession(activeSession.id, {
@@ -800,7 +832,7 @@ export class InterviewController {
         userProfileId,
         jobDescription,
         jobTitle,
-        companyName
+        companyName,
       );
     }
 
@@ -808,7 +840,7 @@ export class InterviewController {
     const sessionId = await this.sessionService.getOrCreateSession(
       userProfileId,
       resumeId,
-      jobDescriptionId
+      jobDescriptionId,
     );
 
     return sessionId;

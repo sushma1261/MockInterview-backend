@@ -1,7 +1,4 @@
-import { Redis } from "ioredis";
-import { Pool } from "pg";
-import { ResumeService } from "./ResumeService";
-import { UserProfileService } from "./UserProfileService";
+import ServiceFactory from "./ServiceFactory";
 import { VectorStoreService } from "./VectorStoreService";
 
 /**
@@ -10,13 +7,11 @@ import { VectorStoreService } from "./VectorStoreService";
 export class ResumeContextService {
   private static instance: ResumeContextService | null = null;
   private cache: Map<string, string[]>;
-  private resumeService: ResumeService;
-  private userProfileService: UserProfileService;
+  private resumeService = ServiceFactory.getResumeService();
+  private userProfileService = ServiceFactory.getUserProfileService();
 
-  constructor(pool: Pool, redis: Redis) {
+  constructor() {
     this.cache = new Map();
-    this.resumeService = new ResumeService(pool, redis);
-    this.userProfileService = new UserProfileService(pool, redis);
   }
 
   /**
@@ -25,12 +20,12 @@ export class ResumeContextService {
    */
   private async fetchResumeContextFromDB(
     userId: string,
-    resumeId: number | null
+    resumeId: number | null,
   ): Promise<string[]> {
     console.log(
       `🔍 Fetching resume context from vector store for user: ${userId}, resume: ${
         resumeId || "all"
-      }`
+      }`,
     );
 
     try {
@@ -58,36 +53,36 @@ export class ResumeContextService {
       const docs = await vectorStore.similaritySearch(
         "help me prepare for behavioral interview based on the resume uploaded.",
         resumeId !== null ? 5 : 3, // k: number of results
-        filter // filter: applied to metadata JSONB column using @> operator
+        filter, // filter: applied to metadata JSONB column using @> operator
       );
 
       console.log(
         `✅ Found ${docs.length} chunks for user ${userId}${
           resumeId ? `, resume ${resumeId}` : ""
-        }`
+        }`,
       );
 
       // Debug: Log the metadata of returned docs to verify filtering
       if (docs.length > 0) {
         console.log(
           `📄 Sample metadata from first chunk:`,
-          JSON.stringify(docs[0].metadata, null, 2)
+          JSON.stringify(docs[0].metadata, null, 2),
         );
 
         // Verify all docs belong to the user (safety check)
         const wrongUserDocs = docs.filter(
-          (doc) => doc.metadata.user_id !== userId
+          (doc) => doc.metadata.user_id !== userId,
         );
         if (wrongUserDocs.length > 0) {
           console.error(
-            `⚠️ WARNING: Found ${wrongUserDocs.length} chunks that don't belong to user ${userId}!`
+            `⚠️ WARNING: Found ${wrongUserDocs.length} chunks that don't belong to user ${userId}!`,
           );
           // Filter out wrong user docs
           const filteredDocs = docs.filter(
-            (doc) => doc.metadata.user_id === userId
+            (doc) => doc.metadata.user_id === userId,
           );
           console.log(
-            `🔒 Applied client-side filtering: ${filteredDocs.length}/${docs.length} chunks kept`
+            `🔒 Applied client-side filtering: ${filteredDocs.length}/${docs.length} chunks kept`,
           );
           return filteredDocs.map((d) => d.pageContent);
         }
@@ -103,14 +98,9 @@ export class ResumeContextService {
   /**
    * Get singleton instance
    */
-  static getInstance(pool?: Pool, redis?: Redis): ResumeContextService {
+  static getInstance(): ResumeContextService {
     if (!ResumeContextService.instance) {
-      if (!pool || !redis) {
-        throw new Error(
-          "ResumeContextService requires pool and redis on first getInstance call"
-        );
-      }
-      ResumeContextService.instance = new ResumeContextService(pool, redis);
+      ResumeContextService.instance = new ResumeContextService();
     }
     return ResumeContextService.instance;
   }
@@ -122,7 +112,7 @@ export class ResumeContextService {
    */
   public async fetchResumeContext(
     userId: string,
-    resumeId: number | null = null
+    resumeId: number | null = null,
   ): Promise<string[]> {
     // Create cache key
     const cacheKey = resumeId ? `${userId}:resume:${resumeId}` : userId;
@@ -138,7 +128,7 @@ export class ResumeContextService {
     console.log(
       `Fetching fresh resume context for user: ${userId}, resume: ${
         resumeId || "all"
-      }`
+      }`,
     );
     const retrievedDocs = await this.fetchResumeContextFromDB(userId, resumeId);
 
@@ -155,7 +145,7 @@ export class ResumeContextService {
    */
   public async fetchResumeContextAsString(
     userId: string,
-    resumeId: number | null = null
+    resumeId: number | null = null,
   ): Promise<string> {
     const docs = await this.fetchResumeContext(userId, resumeId);
     return docs.join("\n\n");
@@ -189,25 +179,12 @@ export class ResumeContextService {
   public clearUserCache(userId: string): void {
     // Clear all cache entries for this user (including specific resumes)
     const keysToDelete = Array.from(this.cache.keys()).filter((key) =>
-      key.startsWith(userId)
+      key.startsWith(userId),
     );
     keysToDelete.forEach((key) => this.cache.delete(key));
     console.log(
-      `Cleared ${keysToDelete.length} resume cache entries for user: ${userId}`
+      `Cleared ${keysToDelete.length} resume cache entries for user: ${userId}`,
     );
-  }
-
-  /**
-   * Clear cache for a specific resume
-   */
-  public clearResumeCache(userId: string, resumeId: number): void {
-    const cacheKey = `${userId}:resume:${resumeId}`;
-    if (this.cache.has(cacheKey)) {
-      this.cache.delete(cacheKey);
-      console.log(
-        `Cleared resume cache for user: ${userId}, resume: ${resumeId}`
-      );
-    }
   }
 
   /**
@@ -219,26 +196,12 @@ export class ResumeContextService {
   }
 
   /**
-   * Get cache size
-   */
-  public getCacheSize(): number {
-    return this.cache.size;
-  }
-
-  /**
-   * Get all cached keys
-   */
-  public getCachedKeys(): string[] {
-    return Array.from(this.cache.keys());
-  }
-
-  /**
    * Fetch resume context by resumeId for a user (from vector store)
    * This fetches semantic chunks from the vector database
    */
   async fetchResumeContextById(
     userId: string,
-    resumeId: number
+    resumeId: number,
   ): Promise<string> {
     // Fetch chunks from vector store for this specific resume
     const chunks = await this.fetchResumeContext(userId, resumeId);

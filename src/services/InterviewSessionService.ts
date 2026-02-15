@@ -378,6 +378,34 @@ export class InterviewSessionService {
   }
 
   /**
+   * Get recent messages for a session (most recent first)
+   */
+  async getRecentMessages(
+    sessionId: number,
+    limit: number = 10
+  ): Promise<any[]> {
+    const result = await this.pool.query(
+      `SELECT 
+        id,
+        role,
+        content,
+        message_type,
+        question_number,
+        question_type,
+        function_name,
+        function_result,
+        created_at
+       FROM chat_messages
+       WHERE session_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [sessionId, limit]
+    );
+
+    return result.rows;
+  }
+
+  /**
    * Get conversation history as formatted string
    */
   async getConversationHistory(

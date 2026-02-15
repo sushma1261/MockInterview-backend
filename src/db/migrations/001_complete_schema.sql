@@ -5,6 +5,9 @@
 -- for the Mock Interview application with vector embeddings support
 -- ============================================================================
 
+-- Ensure we're operating in the public schema to avoid "no schema has been selected" errors
+SET search_path = public, pg_catalog;
+
 -- ----------------------------------------------------------------------------
 -- PART 1: User Profiles and Preferences
 -- ----------------------------------------------------------------------------

@@ -26,10 +26,15 @@ class CustomGoogleGenAIEmbeddings extends Embeddings {
   async embedDocuments(texts: string[]): Promise<number[][]> {
     const embeddings: number[][] = [];
 
-    // Process in batches to avoid rate limits
-    for (const text of texts) {
-      const embedding = await this.embedQuery(text);
+    // Process in batches with rate limiting (max 10 RPM for safety)
+    for (let i = 0; i < texts.length; i++) {
+      const embedding = await this.embedQuery(texts[i]);
       embeddings.push(embedding);
+
+      // Add delay between requests (6 seconds = max 10 requests/minute)
+      if (i < texts.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+      }
     }
 
     return embeddings;
@@ -47,14 +52,14 @@ class CustomGoogleGenAIEmbeddings extends Embeddings {
 
       if (!result.embeddings || result.embeddings.length === 0) {
         throw new Error(
-          `No embeddings returned for text: ${text.substring(0, 50)}...`
+          `No embeddings returned for text: ${text.substring(0, 50)}...`,
         );
       }
 
       const embedding = result.embeddings[0];
       if (!embedding.values || embedding.values.length === 0) {
         throw new Error(
-          `Empty embedding values for text: ${text.substring(0, 50)}...`
+          `Empty embedding values for text: ${text.substring(0, 50)}...`,
         );
       }
 
@@ -126,10 +131,11 @@ export const getTextEmbeddingsAPI = () => {
   // Use custom GoogleGenAI implementation with gemini-embedding-001 (768 dimensions)
   return new CustomGoogleGenAIEmbeddings(
     process.env.GEMINI_API_KEY,
-    "gemini-embedding-001"
+    "gemini-embedding-001",
   );
 };
 
 export const isAIDisabled = () => {
+  console.log("AI_DISABLED:", process.env.AI_DISABLED);
   return process.env.AI_DISABLED === "true";
 };

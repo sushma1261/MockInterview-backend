@@ -7,6 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "migrate": "ts-node src/db/migrate.ts",
+    "migrate:local": "POSTGRES_HOST=localhost POSTGRES_PORT=5433 POSTGRES_USER=system POSTGRES_PASSWORD=password POSTGRES_DB=mockinterview ts-node src/db/migrate.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -34,19 +35,24 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
     "express-session": "^1.18.2",
     "firebase-admin": "^13.5.0",
     "ioredis": "^5.8.1",
     "multer": "^2.0.2",
     "nodemon": "^3.1.10",
-    "oci-common": "^2.100.0",
-    "oci-secrets": "^2.100.0",
-    "oci-vault": "^2.100.0",
+    "oci-common": "^2.119.1",
+    "oci-secrets": "^2.119.1",
+    "oci-vault": "^2.119.1",
     "path": "^0.12.7",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.2",
+    "uuid": "^13.0.0",
     "wav": "^1.0.2"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0"
   }
 }

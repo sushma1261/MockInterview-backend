@@ -1,10 +1,8 @@
 import { Request, Response } from "express";
-import redisClient from "../config/redis";
-import pool from "../db/pool";
-import { ResumeService } from "../services/ResumeService";
+import ServiceFactory from "../services/ServiceFactory";
 
-// Initialize service
-const resumeService = new ResumeService(pool, redisClient);
+// Get singleton service instance
+const resumeService = ServiceFactory.getResumeService();
 
 /**
  * Download resume PDF file

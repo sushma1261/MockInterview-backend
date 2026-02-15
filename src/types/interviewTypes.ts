@@ -34,6 +34,12 @@ export interface AskNextQuestionResult {
   question_number: number;
   question_type: QuestionType;
   reasoning?: string;
+  previous_answer_feedback?: {
+    feedback_text?: string;
+    strengths?: string[];
+    areas_for_improvement?: string[];
+    score?: number;
+  };
 }
 
 export interface GenerateFeedbackResult {

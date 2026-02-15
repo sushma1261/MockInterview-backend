@@ -1,12 +1,9 @@
 import { Request, Response } from "express";
-import redisClient from "../config/redis";
-import pool from "../db/pool";
-import { ResumeService } from "../services/ResumeService";
-import { UserProfileService } from "../services/UserProfileService";
+import ServiceFactory from "../services/ServiceFactory";
 
-// Initialize services
-const userProfileService = new UserProfileService(pool, redisClient);
-const resumeService = new ResumeService(pool, redisClient);
+// Get singleton service instances
+const userProfileService = ServiceFactory.getUserProfileService();
+const resumeService = ServiceFactory.getResumeService();
 
 // ==================== User Profile Controllers ====================
 
@@ -19,15 +16,6 @@ export const getUserProfile = async (req: Request, res: Response) => {
     res.json(req.userProfile);
   } catch (error) {
     console.error("Error getting user profile:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-export const healthCheck = async (req: Request, res: Response) => {
-  try {
-    res.json({ status: "UserProfileController is healthy" });
-  } catch (error) {
-    console.error("Health check error:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
