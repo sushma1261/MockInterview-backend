@@ -117,12 +117,22 @@ export class InterviewController {
 
     console.log(`📊 Using PostgreSQL session ${pgSessionId} for tracking`);
 
-    // Build prompt
-    const conversationHistory = await this.conversationStore.fetchContext(
-      userId,
-      "interview",
-      10,
-    );
+    // Build prompt - only include history if this is a reconstructed session
+    let conversationHistory = "";
+    const needsHistory = this.chatSessionManager.needsHistorySeed(userId);
+
+    if (needsHistory) {
+      console.log(`📜 Fetching history for reconstructed session: ${userId}`);
+      conversationHistory = await this.conversationStore.fetchContext(
+        userId,
+        "interview",
+        10,
+      );
+    } else {
+      console.log(
+        `⚡ Skipping history fetch - SDK maintains context for active session: ${userId}`,
+      );
+    }
 
     const prompt = PromptBuilder.buildPrompt(
       action || InterviewAction.CONTINUE,
@@ -191,6 +201,11 @@ export class InterviewController {
         streamResult.fullText,
         "ai",
       );
+
+      // Mark history as seeded if it was a reconstructed session
+      if (needsHistory) {
+        this.chatSessionManager.markHistorySeeded(userId);
+      }
 
       // Save to PostgreSQL
       await this.sessionService.saveMessage(
@@ -394,12 +409,22 @@ export class InterviewController {
       `📊 Using PostgreSQL session ${pgSessionId} for tracking (streaming)`,
     );
 
-    // Build prompt
-    const conversationHistory = await this.conversationStore.fetchContext(
-      userId,
-      "interview",
-      10,
-    );
+    // Build prompt - only include history if this is a reconstructed session
+    let conversationHistory = "";
+    const needsHistory = this.chatSessionManager.needsHistorySeed(userId);
+
+    if (needsHistory) {
+      console.log(`📜 Fetching history for reconstructed session: ${userId}`);
+      conversationHistory = await this.conversationStore.fetchContext(
+        userId,
+        "interview",
+        10,
+      );
+    } else {
+      console.log(
+        `⚡ Skipping history fetch - SDK maintains context for active session: ${userId}`,
+      );
+    }
 
     const prompt = PromptBuilder.buildPrompt(
       action || InterviewAction.CONTINUE,
@@ -467,6 +492,11 @@ export class InterviewController {
         streamResult.fullText,
         "ai",
       );
+
+      // Mark history as seeded if it was a reconstructed session
+      if (needsHistory) {
+        this.chatSessionManager.markHistorySeeded(userId);
+      }
 
       // Save to PostgreSQL
       const funcResult = streamResult.functionCallResult;

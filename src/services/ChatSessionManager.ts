@@ -11,10 +11,12 @@ import { RedisSessionStore } from "./RedisSessionStore";
 export class ChatSessionManager {
   private static instance: ChatSessionManager;
   private sessions: Map<string, any>; // In-memory cache for active chats
+  private sessionNeedsHistorySeed: Map<string, boolean>; // Track if session needs history on first turn
   private redisStore: RedisSessionStore;
 
   private constructor(redis: Redis) {
     this.sessions = new Map();
+    this.sessionNeedsHistorySeed = new Map();
     this.redisStore = RedisSessionStore.getInstance(redis);
   }
 
@@ -56,7 +58,7 @@ export class ChatSessionManager {
   public async createSession(
     userId: string,
     resumeContext: string,
-    jobDescription?: string
+    jobDescription?: string,
   ): Promise<any> {
     const systemPrompt = PromptBuilder.buildSystemPrompt({
       resumeContext,
@@ -68,6 +70,8 @@ export class ChatSessionManager {
 
     // Store in memory for quick access
     this.sessions.set(userId, chat);
+    // New sessions don't need history seeding (they're fresh)
+    this.sessionNeedsHistorySeed.set(userId, false);
 
     // Persist to Redis with TTL
     await this.redisStore.saveChatSession(userId, {
@@ -98,12 +102,14 @@ export class ChatSessionManager {
       // Reconstruct GenAI chat object from stored data
       const reconstructedChat = await this.reconstructChatFromRedis(
         userId,
-        sessionData
+        sessionData,
       );
 
       if (reconstructedChat) {
         // Cache in memory for future requests
         this.sessions.set(userId, reconstructedChat);
+        // Reconstructed sessions need history on first turn
+        this.sessionNeedsHistorySeed.set(userId, true);
         console.log(`✅ Successfully restored session for user: ${userId}`);
         return reconstructedChat;
       }
@@ -123,22 +129,19 @@ export class ChatSessionManager {
       history: any[];
       resumeId?: number;
       jobDescription?: string;
-    }
+    },
   ): Promise<any | null> {
     try {
       // Create chat using common function
       const chat = this.createChatObject(sessionData.systemPrompt);
 
-      // Restore conversation history if it exists
+      // Restore conversation history if it exists by replaying messages
       if (sessionData.history && sessionData.history.length > 0) {
-        // GenAI SDK allows setting initial history
-        // Note: This reconstructs the context for the AI
         console.log(
-          `📝 Restoring ${sessionData.history.length} history items for user: ${userId}`
+          `📝 Will replay ${sessionData.history.length} history items for user: ${userId} on first turn`,
         );
-
-        // The history is already stored in the chat object
-        // GenAI SDK maintains it internally through the chat instance
+        // Note: History will be injected in the FIRST prompt after reconstruction
+        // After that, SDK maintains context automatically
       }
 
       return chat;
@@ -167,6 +170,7 @@ export class ChatSessionManager {
   public async deleteSession(userId: string): Promise<void> {
     if (this.sessions.has(userId)) {
       this.sessions.delete(userId);
+      this.sessionNeedsHistorySeed.delete(userId);
       console.log(`Deleted chat session from memory for user: ${userId}`);
     }
 
@@ -179,7 +183,7 @@ export class ChatSessionManager {
   public async getOrCreateSession(
     userId: string,
     resumeContext: string,
-    jobDescription?: string
+    jobDescription?: string,
   ): Promise<any> {
     const existingSession = await this.getSession(userId);
     if (existingSession) {
@@ -194,7 +198,7 @@ export class ChatSessionManager {
   public async restartSession(
     userId: string,
     resumeContext: string,
-    jobDescription?: string
+    jobDescription?: string,
   ): Promise<any> {
     await this.deleteSession(userId);
     return await this.createSession(userId, resumeContext, jobDescription);
@@ -214,6 +218,7 @@ export class ChatSessionManager {
    */
   public async clearAll(): Promise<void> {
     this.sessions.clear();
+    this.sessionNeedsHistorySeed.clear();
     await this.redisStore.clearAll();
     console.log("Cleared all chat sessions");
   }
@@ -247,5 +252,24 @@ export class ChatSessionManager {
       sessionData.resumeId = resumeId;
       await this.redisStore.saveChatSession(userId, sessionData);
     }
+  }
+
+  /**
+   * Check if session needs history seeding (first turn after reconstruction)
+   * Returns true if history should be included in prompt
+   */
+  public needsHistorySeed(userId: string): boolean {
+    return this.sessionNeedsHistorySeed.get(userId) || false;
+  }
+
+  /**
+   * Mark that history has been seeded for this session
+   * Call after first turn with history injection
+   */
+  public markHistorySeeded(userId: string): void {
+    this.sessionNeedsHistorySeed.set(userId, false);
+    console.log(
+      `✅ History seeded for session: ${userId} - SDK will maintain context from now`,
+    );
   }
 }
