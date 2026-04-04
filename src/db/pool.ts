@@ -20,21 +20,13 @@ class DatabasePool {
     if (!DatabasePool.instance) {
       console.log("🔷 Initializing PostgreSQL connection pool...");
 
-      const config: PoolConfig =
-        process.env.NODE_ENV === "production"
-          ? {
-              connectionString: process.env.DATABASE_URL,
-              ssl: {
-                rejectUnauthorized: false,
-              },
-            }
-          : {
-              host: process.env.POSTGRES_HOST || "localhost",
-              port: Number(process.env.POSTGRES_PORT) || 5432,
-              user: process.env.POSTGRES_USER,
-              password: process.env.POSTGRES_PASSWORD,
-              database: process.env.POSTGRES_DB,
-            };
+      const config: PoolConfig = {
+        host: process.env.POSTGRES_HOST || "localhost",
+        port: Number(process.env.POSTGRES_PORT) || 5432,
+        user: process.env.POSTGRES_USER,
+        password: process.env.POSTGRES_PASSWORD,
+        database: process.env.POSTGRES_DB,
+      };
 
       DatabasePool.instance = new Pool(config);
       DatabasePool.isInitialized = true;

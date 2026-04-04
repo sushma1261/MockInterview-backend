@@ -3,18 +3,21 @@ services:
     image: pgvector/pgvector:0.8.1-pg18
     container_name: mockinterview-postgres
     restart: always
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-system}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-      POSTGRES_DB: ${POSTGRES_DB:-mockinterview}
-      # Performance tuning for free tier
-      POSTGRES_MAX_CONNECTIONS: 100
-      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_MAX_CONNECTIONS: 50
+      POSTGRES_SHARED_BUFFERS: 128MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 256MB
+      POSTGRES_WORK_MEM: 4MB
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-system} -d ${POSTGRES_DB:-mockinterview}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,9 +56,7 @@ services:
         max-file: "3"
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: ${DOCKER_IMAGE:-mockinterview-backend:latest}
     container_name: mockinterview-backend
     restart: always
     ports:
@@ -76,7 +77,6 @@ services:
         condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
-      - ./firebase:/app/firebase:ro
     networks:
       - backend_network
     logging:

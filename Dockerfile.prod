@@ -40,11 +40,7 @@ RUN npm ci --only=production --legacy-peer-deps && \
 # Copy built application from builder stage
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 
-# Copy necessary files
-COPY --chown=nodejs:nodejs firebase ./firebase
-COPY --chown=nodejs:nodejs uploads ./uploads
-
-# Create uploads directory if it doesn't exist
+# Create uploads directory
 RUN mkdir -p uploads && chown -R nodejs:nodejs uploads
 
 # Switch to non-root user
