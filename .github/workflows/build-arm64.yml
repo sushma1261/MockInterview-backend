@@ -22,11 +22,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           
-      - name: Build and push ARM64
+      - name: Build and push AMD64
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.prod
-          platforms: linux/arm64
+          platforms: linux/amd64
           push: true
           tags: sushma1261/mockinterview-backend:latest
