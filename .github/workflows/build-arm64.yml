@@ -43,14 +43,17 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
             # Write .env file
-            cat > ~/backend/.env << 'ENVEOF'
+            cat > ~/backend/.env << ENVEOF
             POSTGRES_USER=system
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
             POSTGRES_DB=mockinterview
-            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
             FIREBASE_CLIENT_EMAIL=${{ secrets.FIREBASE_CLIENT_EMAIL }}
             FIREBASE_PRIVATE_KEY=${{ secrets.FIREBASE_PRIVATE_KEY }}
+            NODE_ENV=production
+            AUTH_ENABLED=true
+            BASE_URL=http://${{ secrets.VM_IP }}
             DOCKER_IMAGE=sushma1261/mockinterview-backend:latest
             ENVEOF
 
