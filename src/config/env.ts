@@ -35,7 +35,7 @@ export const config = {
   },
   
   ai: {
-    googleApiKey: process.env.GOOGLE_API_KEY || '',
+    googleApiKey: process.env.GEMINI_API_KEY || '',
     disabled: process.env.AI_DISABLED === 'true',
   },
   
@@ -76,7 +76,7 @@ export function validateConfig(): void {
       'POSTGRES_USER': config.database.user,
       'POSTGRES_PASSWORD': config.database.password,
       'POSTGRES_DB': config.database.database,
-      'GOOGLE_API_KEY': config.ai.googleApiKey,
+      'GEMINI_API_KEY': config.ai.googleApiKey,
       'FIREBASE_PROJECT_ID': config.firebase.projectId,
       'FIREBASE_CLIENT_EMAIL': config.firebase.clientEmail,
       'FIREBASE_PRIVATE_KEY': config.firebase.privateKey,

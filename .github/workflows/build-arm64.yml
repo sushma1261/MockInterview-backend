@@ -30,3 +30,31 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: sushma1261/mockinterview-backend:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_IP }}
+          username: ubuntu
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            # Write .env file
+            cat > ~/backend/.env << 'ENVEOF'
+            POSTGRES_USER=system
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+            POSTGRES_DB=mockinterview
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+            FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+            FIREBASE_CLIENT_EMAIL=${{ secrets.FIREBASE_CLIENT_EMAIL }}
+            FIREBASE_PRIVATE_KEY=${{ secrets.FIREBASE_PRIVATE_KEY }}
+            DOCKER_IMAGE=sushma1261/mockinterview-backend:latest
+            ENVEOF
+
+            # Pull latest image and restart backend
+            cd ~/backend
+            docker compose -f docker-compose.prod.yaml pull backend
+            docker compose -f docker-compose.prod.yaml up -d --force-recreate backend

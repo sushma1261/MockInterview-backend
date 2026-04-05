@@ -56,7 +56,7 @@ services:
         max-file: "3"
 
   backend:
-    image: ${DOCKER_IMAGE:-mockinterview-backend:latest}
+    image: ${DOCKER_IMAGE}
     container_name: mockinterview-backend
     restart: always
     ports:
